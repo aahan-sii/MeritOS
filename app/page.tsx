@@ -74,11 +74,11 @@ const initialClaims: Claim[] = [
 ];
 
 const navItems: { id: View; label: string; glyph: string }[] = [
-  { id: "overview", label: "Dashboard", glyph: "⌂" },
-  { id: "lifegraph", label: "Evidence (LifeGraph)", glyph: "◫" },
-  { id: "applications", label: "Applications", glyph: "▤" },
-  { id: "review", label: "Application review", glyph: "◎" },
-  { id: "stories", label: "Stories", glyph: "✦" },
+  { id: "overview", label: "Your progress", glyph: "⌂" },
+  { id: "lifegraph", label: "1. Build your profile", glyph: "◫" },
+  { id: "applications", label: "2. Complete application", glyph: "▤" },
+  { id: "review", label: "3. Review before submitting", glyph: "◎" },
+  { id: "stories", label: "Stories and essays", glyph: "✦" },
 ];
 
 const applications = [
@@ -220,7 +220,7 @@ export default function Home() {
   useEffect(() => {
     const items = Array.from(
       document.querySelectorAll<HTMLElement>(
-        ".hero-card, .section-card, .metrics-strip, .application-header-card, .review-hero, .story-intro, .committee-grid",
+        ".hero-card, .guided-path, .next-step-banner, .section-card, .metrics-strip, .application-header-card, .review-hero, .story-intro, .committee-grid",
       ),
     );
     const reduceMotion = window.matchMedia(
@@ -255,6 +255,13 @@ export default function Home() {
   function announce(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
+  }
+
+  function goTo(nextView: View) {
+    setView(nextView);
+    window.requestAnimationFrame(() =>
+      window.scrollTo({ top: 0, behavior: "smooth" }),
+    );
   }
 
   function chooseFile(file: File | undefined) {
@@ -419,10 +426,10 @@ export default function Home() {
           <div>
             <span className="eyebrow">2026 application season</span>
             <h1>
-              {view === "overview" && "Application dashboard"}
-              {view === "lifegraph" && "Evidence and facts"}
-              {view === "applications" && "Applications"}
-              {view === "review" && "Application review"}
+              {view === "overview" && "Your application journey"}
+              {view === "lifegraph" && "Step 1: Build your profile"}
+              {view === "applications" && "Step 2: Complete an application"}
+              {view === "review" && "Step 3: Review before submitting"}
               {view === "stories" && "Stories and essays"}
             </h1>
           </div>
@@ -450,24 +457,25 @@ export default function Home() {
           <div className="page-grid overview-page">
             <section className="hero-card">
               <div className="hero-copy">
-                <StatusPill tone="green">Evidence health · strong</StatusPill>
-                <h2>Your strongest truthful case, ready when you are.</h2>
+                <StatusPill tone="green">Your guided workspace</StatusPill>
+                <h2>Turn your real experience into a stronger application.</h2>
                 <p>
-                  MeritOS has verified {verifiedCount} core claims and found
-                  three high-value actions across your active applications.
+                  Upload your documents once. MeritOS helps you find truthful
+                  answers, complete each application, and check it before you
+                  submit. You approve every suggestion.
                 </p>
                 <div className="hero-actions">
                   <button
                     className="primary-button"
-                    onClick={() => setView("review")}
+                    onClick={() => goTo("lifegraph")}
                   >
-                    Review this application
+                    Continue with your profile
                   </button>
                   <button
                     className="text-button"
-                    onClick={() => setView("lifegraph")}
+                    onClick={() => goTo("applications")}
                   >
-                    Review evidence <span>→</span>
+                    Try the sample application <span>→</span>
                   </button>
                 </div>
               </div>
@@ -486,6 +494,55 @@ export default function Home() {
                     Competitive · moderate confidence
                   </div>
                 </div>
+              </div>
+            </section>
+
+            <section className="guided-path" aria-labelledby="guided-path-title">
+              <div className="guided-path-heading">
+                <div>
+                  <span className="eyebrow">How MeritOS works</span>
+                  <h2 id="guided-path-title">One application, four clear steps</h2>
+                </div>
+                <p>
+                  Start with your verified profile, then move from left to right.
+                  MeritOS will always show you the next action.
+                </p>
+              </div>
+              <div className="guided-steps">
+                <button className="guided-step current" onClick={() => goTo("lifegraph")}>
+                  <span className="step-number">1</span>
+                  <span className="step-state">{verifiedCount} facts verified</span>
+                  <strong>Build your profile</strong>
+                  <small>Upload a résumé and confirm the facts MeritOS may use.</small>
+                  <span className="step-action">Continue profile →</span>
+                </button>
+                <button className="guided-step" onClick={() => goTo("applications")}>
+                  <span className="step-number">2</span>
+                  <span className="step-state">Sample ready</span>
+                  <strong>Open an application</strong>
+                  <small>Choose a program and see its requirements and questions.</small>
+                  <span className="step-action">Open application →</span>
+                </button>
+                <button className="guided-step" onClick={() => goTo("applications")}>
+                  <span className="step-number">3</span>
+                  <span className="step-state">{approvedFields.length}/3 approved</span>
+                  <strong>Complete the questions</strong>
+                  <small>Review evidence-backed answers and approve them yourself.</small>
+                  <span className="step-action">Review answers →</span>
+                </button>
+                <button className="guided-step" onClick={() => goTo("review")}>
+                  <span className="step-number">4</span>
+                  <span className="step-state">
+                    {reviewComplete ? "Preview available" : "Reviewing"}
+                  </span>
+                  <strong>Check before submitting</strong>
+                  <small>Find missing evidence, weak answers, and the best improvements.</small>
+                  <span className="step-action">See review →</span>
+                </button>
+              </div>
+              <div className="safety-note">
+                <strong>MeritOS never submits for you.</strong>
+                <span>It suggests, explains, and checks. You make every final decision.</span>
               </div>
             </section>
 
@@ -602,6 +659,20 @@ export default function Home() {
 
         {view === "lifegraph" && (
           <div className="content-page">
+            <section className="next-step-banner">
+              <span className="next-step-check" aria-hidden="true">✓</span>
+              <div>
+                <span className="eyebrow">Step 1 in progress</span>
+                <h2>Your profile has {verifiedCount} verified facts.</h2>
+                <p>
+                  Approve anything that is accurate. When you are ready, use
+                  those facts to complete the sample application.
+                </p>
+              </div>
+              <button className="primary-button" onClick={() => goTo("applications")}>
+                Next: open an application
+              </button>
+            </section>
             <section className="metrics-strip">
               <div>
                 <span>Verified claims</span>
@@ -714,6 +785,20 @@ export default function Home() {
 
         {view === "applications" && (
           <div className="content-page application-workspace">
+            <section className="next-step-banner application-guide">
+              <span className="next-step-check" aria-hidden="true">2</span>
+              <div>
+                <span className="eyebrow">What to do here</span>
+                <h2>Review the suggested answers below.</h2>
+                <p>
+                  Click each answer’s evidence label to approve it. Then apply
+                  your approved suggestions and continue to the final review.
+                </p>
+              </div>
+              <button className="secondary-button" onClick={() => setShowOverlay(true)}>
+                Open focused overlay
+              </button>
+            </section>
             <div className="application-tabs" role="tablist" aria-label="Applications">
               {applications.map((app) => (
                 <button
@@ -856,6 +941,18 @@ export default function Home() {
                     Apply approved suggestions
                   </button>
                 </div>
+                {overlayApplied && (
+                  <div className="completion-callout" role="status">
+                    <span aria-hidden="true">✓</span>
+                    <div>
+                      <strong>Your approved answers are in the preview.</strong>
+                      <small>Nothing was submitted. The next step is a final quality review.</small>
+                    </div>
+                    <button className="primary-button" onClick={() => goTo("review")}>
+                      Review before submitting
+                    </button>
+                  </div>
+                )}
               </section>
             </div>
           </div>

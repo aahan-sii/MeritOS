@@ -2500,7 +2500,213 @@ body {
   transform: translateY(0) rotateX(0);
 }
 
+.guided-path {
+  grid-column: 1 / -1;
+  padding: 26px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(252, 253, 251, 0.92);
+  box-shadow: 0 14px 34px rgba(22, 45, 36, 0.04);
+}
+
+.guided-path-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 28px;
+  margin-bottom: 20px;
+}
+
+.guided-path-heading h2,
+.next-step-banner h2 {
+  margin: 5px 0 0;
+  font-size: 21px;
+  line-height: 1.2;
+  letter-spacing: -0.035em;
+}
+
+.guided-path-heading p {
+  width: min(430px, 100%);
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.guided-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--line);
+}
+
+.guided-step {
+  min-height: 205px;
+  padding: 19px;
+  border: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-content: start;
+  gap: 13px 10px;
+  color: var(--ink);
+  background: var(--paper);
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms ease, transform 160ms ease;
+}
+
+.guided-step:hover,
+.guided-step:focus-visible {
+  position: relative;
+  z-index: 1;
+  background: var(--mint-2);
+}
+
+.guided-step.current {
+  background:
+    linear-gradient(145deg, rgba(222, 239, 230, 0.9), rgba(248, 251, 249, 0.96));
+  box-shadow: inset 0 3px 0 var(--forest-2);
+}
+
+.step-number {
+  width: 25px;
+  height: 25px;
+  border: 1px solid var(--line-dark);
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: var(--forest-2);
+  background: white;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.step-state {
+  align-self: center;
+  justify-self: end;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.guided-step strong,
+.guided-step small,
+.step-action {
+  grid-column: 1 / -1;
+}
+
+.guided-step strong {
+  margin-top: 4px;
+  font-size: 14px;
+  letter-spacing: -0.02em;
+}
+
+.guided-step small {
+  min-height: 44px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.step-action {
+  align-self: end;
+  color: var(--forest-2);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.safety-note {
+  padding: 15px 3px 0;
+  display: flex;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.safety-note strong {
+  color: var(--ink);
+}
+
+.next-step-banner {
+  margin-bottom: 18px;
+  padding: 20px 22px;
+  border: 1px solid #cddbd2;
+  border-radius: 11px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 15px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(165, 211, 187, 0.18), transparent 22rem),
+    var(--paper);
+}
+
+.next-step-check {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  color: #e5f3eb;
+  background: var(--forest);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.next-step-banner p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.completion-callout {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #bfd6c8;
+  border-radius: 9px;
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 11px;
+  background: #edf7f1;
+}
+
+.completion-callout > span {
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: white;
+  background: var(--forest-2);
+}
+
+.completion-callout strong,
+.completion-callout small {
+  display: block;
+}
+
+.completion-callout strong {
+  font-size: 11px;
+}
+
+.completion-callout small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
 @media (max-width: 1180px) {
+  .guided-steps {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
   .committee-grid {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -2608,6 +2814,38 @@ body {
 }
 
 @media (max-width: 650px) {
+  .guided-path {
+    padding: 18px;
+  }
+
+  .guided-path-heading {
+    display: grid;
+    gap: 9px;
+  }
+
+  .guided-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .guided-step {
+    min-height: 172px;
+  }
+
+  .safety-note {
+    display: grid;
+  }
+
+  .next-step-banner,
+  .completion-callout {
+    grid-template-columns: 34px 1fr;
+  }
+
+  .next-step-banner button,
+  .completion-callout button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
   .sidebar {
     inset: auto 0 0 0;
     width: 100%;
