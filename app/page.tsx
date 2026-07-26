@@ -1,6 +1,6 @@
 "use client";
 
-import { DragEvent, useMemo, useState } from "react";
+import { DragEvent, useEffect, useMemo, useState } from "react";
 
 type View =
   | "overview"
@@ -216,6 +216,41 @@ export default function Home() {
     ...reviewer,
     score: Math.min(99, reviewer.score + reviewEvidenceGain * (index === 2 ? 7 : 3)),
   }));
+
+  useEffect(() => {
+    const items = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        ".hero-card, .section-card, .metrics-strip, .application-header-card, .review-hero, .story-intro, .committee-grid",
+      ),
+    );
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+
+    if (reduceMotion || !("IntersectionObserver" in window)) {
+      items.forEach((item) => item.classList.add("scroll-reveal-visible"));
+      return;
+    }
+
+    items.forEach((item, index) => {
+      item.classList.add("scroll-reveal");
+      item.style.setProperty("--reveal-delay", `${Math.min(index % 4, 3) * 45}ms`);
+    });
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("scroll-reveal-visible");
+          observer.unobserve(entry.target);
+        });
+      },
+      { threshold: 0.08, rootMargin: "0px 0px -28px 0px" },
+    );
+
+    items.forEach((item) => observer.observe(item));
+    return () => observer.disconnect();
+  }, [view, claims.length, reviewComplete]);
 
   function announce(message: string) {
     setToast(message);
@@ -437,10 +472,19 @@ export default function Home() {
                 </div>
               </div>
               <div className="hero-score">
-                <ProgressRing value={84} label="readiness" />
-                <div className="score-caption">
-                  <span className="signal-dot" />
-                  Competitive · moderate confidence
+                <div className="depth-scene" aria-hidden="true">
+                  <span className="depth-plane plane-one" />
+                  <span className="depth-plane plane-two" />
+                  <span className="depth-node node-one" />
+                  <span className="depth-node node-two" />
+                  <span className="depth-line" />
+                </div>
+                <div className="readiness-object">
+                  <ProgressRing value={84} label="readiness" />
+                  <div className="score-caption">
+                    <span className="signal-dot" />
+                    Competitive · moderate confidence
+                  </div>
                 </div>
               </div>
             </section>
