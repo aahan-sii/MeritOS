@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { DragEvent, useMemo, useState } from "react";
 
 type View =
   | "overview"
@@ -20,6 +20,15 @@ type Claim = {
   status: ClaimStatus;
   themes: string[];
 };
+
+type ImportStage = "idle" | "selected" | "uploading" | "done" | "error";
+
+const supportedDocumentExtensions = ["pdf", "doc", "docx", "txt"];
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 const initialClaims: Claim[] = [
   {
@@ -65,11 +74,11 @@ const initialClaims: Claim[] = [
 ];
 
 const navItems: { id: View; label: string; glyph: string }[] = [
-  { id: "overview", label: "Opportunity cockpit", glyph: "⌂" },
-  { id: "lifegraph", label: "LifeGraph", glyph: "◫" },
+  { id: "overview", label: "Dashboard", glyph: "⌂" },
+  { id: "lifegraph", label: "Evidence (LifeGraph)", glyph: "◫" },
   { id: "applications", label: "Applications", glyph: "▤" },
-  { id: "review", label: "Review Room", glyph: "◎" },
-  { id: "stories", label: "Story Studio", glyph: "✦" },
+  { id: "review", label: "Application review", glyph: "◎" },
+  { id: "stories", label: "Stories", glyph: "✦" },
 ];
 
 const applications = [
@@ -176,14 +185,18 @@ export default function Home() {
   const [claims, setClaims] = useState(initialClaims);
   const [selectedApplication, setSelectedApplication] = useState("rhodes");
   const [showImport, setShowImport] = useState(false);
-  const [importStage, setImportStage] = useState<"idle" | "reading" | "done">(
-    "idle",
-  );
+  const [importStage, setImportStage] = useState<ImportStage>("idle");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [importMessage, setImportMessage] = useState("");
   const [reviewRunning, setReviewRunning] = useState(false);
   const [reviewComplete, setReviewComplete] = useState(true);
   const [approvedFields, setApprovedFields] = useState<string[]>(["name"]);
   const [lens, setLens] = useState("Public service");
   const [toast, setToast] = useState("");
+  const [query, setQuery] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
+  const [claimFilter, setClaimFilter] = useState<"all" | "verified" | "review">("all");
+  const [tasksAdded, setTasksAdded] = useState(0);
 
   const selectedApp =
     applications.find((app) => app.id === selectedApplication) ??
@@ -199,29 +212,64 @@ export default function Home() {
     window.setTimeout(() => setToast(""), 2600);
   }
 
-  function runImport() {
-    setImportStage("reading");
+  function chooseFile(file: File | undefined) {
+    if (!file) return;
+    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+    if (!supportedDocumentExtensions.includes(extension)) {
+      setImportStage("error");
+      setImportMessage("Use a PDF, DOC, DOCX, or TXT document.");
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      setImportStage("error");
+      setImportMessage("This file is over the 12 MB import limit.");
+      return;
+    }
+    setSelectedFile(file);
+    setImportMessage("");
+    setImportStage("selected");
+  }
+
+  function handleDrop(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    chooseFile(event.dataTransfer.files[0]);
+  }
+
+  async function runImport() {
+    if (!selectedFile) return;
+    setImportStage("uploading");
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      const response = await fetch("/api/documents", { method: "POST", body: formData });
+      if (!response.ok) throw new Error("Document persistence needs sign-in.");
+      setImportMessage("Securely stored. Text extraction is queued for review.");
+    } catch {
+      setImportMessage("Added to this local workspace. Sign in to store it securely across devices.");
+    }
     window.setTimeout(() => {
-      setImportStage("done");
       setClaims((current) => [
         ...current,
         {
           id: Date.now(),
-          title: "Presented research findings to a public audience",
+          title: `Review material from ${selectedFile.name}`,
           detail:
-            "Candidate claim extracted from the uploaded project portfolio. Review before use.",
-          source: "New portfolio.pdf",
+            "A document was added. Confirm extracted facts before using them in any application.",
+          source: selectedFile.name,
           evidence: 1,
           status: "draft",
-          themes: ["Communication", "Research"],
+          themes: ["New evidence"],
         },
       ]);
-    }, 1100);
+      setImportStage("done");
+    }, 650);
   }
 
   function closeImport() {
     setShowImport(false);
     setImportStage("idle");
+    setSelectedFile(null);
+    setImportMessage("");
   }
 
   function toggleClaimStatus(id: number) {
@@ -259,6 +307,17 @@ export default function Home() {
         : [...current, id],
     );
   }
+
+  const filteredClaims = claims.filter((claim) => {
+    const matchesFilter =
+      claimFilter === "all" ||
+      (claimFilter === "verified" && claim.status === "verified") ||
+      (claimFilter === "review" && claim.status !== "verified");
+    const matchesQuery = `${claim.title} ${claim.detail} ${claim.themes.join(" ")}`
+      .toLowerCase()
+      .includes(query.toLowerCase());
+    return matchesFilter && matchesQuery;
+  });
 
   return (
     <main className="app-shell">
@@ -309,18 +368,18 @@ export default function Home() {
           <div>
             <span className="eyebrow">2026 application season</span>
             <h1>
-              {view === "overview" && "Opportunity cockpit"}
-              {view === "lifegraph" && "Your LifeGraph"}
-              {view === "applications" && "Application workspace"}
-              {view === "review" && "The Review Room"}
-              {view === "stories" && "Story Studio"}
+              {view === "overview" && "Application dashboard"}
+              {view === "lifegraph" && "Evidence and facts"}
+              {view === "applications" && "Applications"}
+              {view === "review" && "Application review"}
+              {view === "stories" && "Stories and essays"}
             </h1>
           </div>
           <div className="top-actions">
             <button
               className="icon-button"
               aria-label="Search"
-              onClick={() => announce("Search is ready for claims and applications.")}
+              onClick={() => setShowSearch(true)}
             >
               ⌕
             </button>
@@ -351,7 +410,7 @@ export default function Home() {
                     className="primary-button"
                     onClick={() => setView("review")}
                   >
-                    Open Review Room
+                    Review this application
                   </button>
                   <button
                     className="text-button"
@@ -380,7 +439,7 @@ export default function Home() {
                   className="text-button"
                   onClick={() => setView("applications")}
                 >
-                  View all
+                  Open applications
                 </button>
               </div>
               <div className="application-list">
@@ -513,13 +572,28 @@ export default function Home() {
                   <h2>Claims and experiences</h2>
                 </div>
                 <div className="segmented">
-                  <button className="active">All</button>
-                  <button>Verified</button>
-                  <button>Needs review</button>
+                  <button
+                    className={claimFilter === "all" ? "active" : ""}
+                    onClick={() => setClaimFilter("all")}
+                  >
+                    All
+                  </button>
+                  <button
+                    className={claimFilter === "verified" ? "active" : ""}
+                    onClick={() => setClaimFilter("verified")}
+                  >
+                    Verified
+                  </button>
+                  <button
+                    className={claimFilter === "review" ? "active" : ""}
+                    onClick={() => setClaimFilter("review")}
+                  >
+                    Needs review
+                  </button>
                 </div>
               </div>
               <div className="claims-list">
-                {claims.map((claim) => (
+                {filteredClaims.map((claim) => (
                   <article className="claim-card" key={claim.id}>
                     <div className={`claim-state ${claim.status}`} aria-hidden="true" />
                     <div className="claim-main">
@@ -563,6 +637,12 @@ export default function Home() {
                     </button>
                   </article>
                 ))}
+                {filteredClaims.length === 0 && (
+                  <div className="empty-state">
+                    <strong>No matching evidence yet.</strong>
+                    <span>Try a different filter or add a document.</span>
+                  </div>
+                )}
               </div>
             </section>
           </div>
@@ -699,7 +779,10 @@ export default function Home() {
                   </span>
                   <button
                     className="secondary-button compact"
-                    onClick={() => announce("Verified fields filled. No form was submitted.")}
+                    onClick={() => {
+                      setApprovedFields(["name", "leadership"]);
+                      announce("Two approved fields are ready to fill. No form was submitted.");
+                    }}
                   >
                     Fill approved fields
                   </button>
@@ -814,7 +897,7 @@ export default function Home() {
 
                   <section className="section-card actions-card">
                     <span className="eyebrow">Highest-leverage improvements</span>
-                    <h2>Do these three things</h2>
+                    <h2>Do these three things{tasksAdded > 0 ? ` · ${tasksAdded} added` : ""}</h2>
                     {[
                       "Add one sentence naming the research decision you personally made.",
                       "Attach a source that corroborates the 32% improvement metric.",
@@ -823,7 +906,10 @@ export default function Home() {
                       <div className="improvement-row" key={action}>
                         <span>{index + 1}</span>
                         <p>{action}</p>
-                        <button onClick={() => announce("Action added to your workspace.")}>
+                        <button onClick={() => {
+                          setTasksAdded((count) => count + 1);
+                          announce("Improvement added to your task list.");
+                        }}>
                           Add task
                         </button>
                       </div>
@@ -973,6 +1059,52 @@ export default function Home() {
         )}
       </section>
 
+      {showSearch && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowSearch(false)}>
+          <section
+            className="search-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="search-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="search-modal-head">
+              <div>
+                <span className="eyebrow">Find your work</span>
+                <h2 id="search-title">Search evidence and applications</h2>
+              </div>
+              <button className="modal-close" onClick={() => setShowSearch(false)} aria-label="Close search">×</button>
+            </div>
+            <label className="search-field">
+              <span aria-hidden="true">⌕</span>
+              <input
+                autoFocus
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Try “research”, “leadership”, or a document name"
+              />
+            </label>
+            <div className="search-results">
+              {filteredClaims.slice(0, 5).map((claim) => (
+                <button
+                  key={claim.id}
+                  onClick={() => {
+                    setView("lifegraph");
+                    setShowSearch(false);
+                    announce(`Opened evidence: ${claim.title}`);
+                  }}
+                >
+                  <span className={`claim-state ${claim.status}`} />
+                  <span><strong>{claim.title}</strong><small>{claim.source}</small></span>
+                  <span>View →</span>
+                </button>
+              ))}
+              {filteredClaims.length === 0 && <p>No matching evidence yet.</p>}
+            </div>
+          </section>
+        </div>
+      )}
+
       {showImport && (
         <div className="modal-backdrop" role="presentation" onMouseDown={closeImport}>
           <section
@@ -992,18 +1124,25 @@ export default function Home() {
               reusable until you review it.
             </p>
 
-            {importStage === "idle" && (
+            {(importStage === "idle" || importStage === "error") && (
               <>
-                <label className="drop-zone">
+                <label
+                  className="drop-zone"
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={handleDrop}
+                >
                   <input
                     type="file"
                     accept=".pdf,.doc,.docx,.txt"
-                    onChange={runImport}
+                    onChange={(event) => chooseFile(event.target.files?.[0])}
                   />
                   <span className="drop-icon">⇧</span>
                   <strong>Choose a document or drop it here</strong>
                   <small>PDF, DOCX, transcript, essay, or portfolio</small>
                 </label>
+                {importStage === "error" && (
+                  <p className="form-error" role="alert">{importMessage}</p>
+                )}
                 <div className="privacy-note">
                   <span>◆</span>
                   <p>
@@ -1014,12 +1153,24 @@ export default function Home() {
               </>
             )}
 
-            {importStage === "reading" && (
+            {importStage === "selected" && selectedFile && (
+              <div className="selected-file">
+                <div className="selected-file-icon" aria-hidden="true">⌁</div>
+                <div>
+                  <strong>{selectedFile.name}</strong>
+                  <span>{formatFileSize(selectedFile.size)} · ready to add</span>
+                </div>
+                <button className="text-button" onClick={() => setImportStage("idle")}>Choose another</button>
+                <button className="primary-button" onClick={runImport}>Add to workspace</button>
+              </div>
+            )}
+
+            {importStage === "uploading" && (
               <div className="import-progress">
                 <div className="document-stack">
                   <span /><span /><span />
                 </div>
-                <h3>Reading structure and extracting candidate claims…</h3>
+                <h3>Saving your document and preparing it for review…</h3>
                 <div className="loading-bar"><span /></div>
               </div>
             )}
@@ -1029,8 +1180,7 @@ export default function Home() {
                 <span className="result-check">✓</span>
                 <h3>One new candidate claim found</h3>
                 <p>
-                  “Presented research findings to a public audience” was added
-                  as a draft with one supporting source.
+                  {importMessage} A draft evidence item is ready for you to review.
                 </p>
                 <button
                   className="primary-button"

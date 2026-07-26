@@ -32,8 +32,8 @@ test("server-renders the MeritOS application shell", async () => {
     html,
     /<title>MeritOS · Evidence-backed application intelligence<\/title>/i,
   );
-  assert.match(html, /Opportunity cockpit/);
-  assert.match(html, /Review Room/);
+  assert.match(html, /Application dashboard/);
+  assert.match(html, /Application review/);
   assert.match(html, /LifeGraph/);
   assert.match(html, /No unsupported claim/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);

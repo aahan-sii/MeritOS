@@ -85,3 +85,23 @@ export const auditEvents = sqliteTable(
   },
   (table) => [index("audit_user_created_idx").on(table.userEmail, table.createdAt)],
 );
+
+export const documents = sqliteTable(
+  "documents",
+  {
+    id: text("id").primaryKey(),
+    userEmail: text("user_email").notNull(),
+    filename: text("filename").notNull(),
+    contentType: text("content_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    storageKey: text("storage_key").notNull().unique(),
+    processingStatus: text("processing_status", {
+      enum: ["stored", "extracting", "ready", "failed"],
+    })
+      .notNull()
+      .default("stored"),
+    extractedText: text("extracted_text"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [index("documents_user_created_idx").on(table.userEmail, table.createdAt)],
+);
