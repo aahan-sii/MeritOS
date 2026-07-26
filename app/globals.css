@@ -1044,6 +1044,22 @@ input:focus-visible {
   gap: 22px;
 }
 
+.application-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.secondary-button.inverse {
+  border-color: rgba(225, 239, 232, 0.35);
+  background: transparent;
+  color: #e6f2eb;
+}
+
+.secondary-button.inverse:hover {
+  background: rgba(225, 239, 232, 0.12);
+}
+
 .application-header-card .progress-ring {
   width: 94px;
   height: 94px;
@@ -1321,6 +1337,20 @@ input:focus-visible {
   border-radius: inherit;
   background: var(--forest-2);
   animation: review-load 1s ease-in-out infinite;
+}
+
+.review-status-stack {
+  display: grid;
+  gap: 7px;
+  justify-items: end;
+}
+
+.review-stale-note {
+  max-width: 140px;
+  color: #805d24;
+  font-size: 8px;
+  line-height: 1.35;
+  text-align: right;
 }
 
 @keyframes review-load {
@@ -1639,6 +1669,132 @@ input:focus-visible {
   padding: 20px;
   background: rgba(10, 27, 22, 0.55);
   backdrop-filter: blur(5px);
+}
+
+.overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(7, 27, 21, 0.34);
+  backdrop-filter: blur(3px);
+}
+
+.screen-overlay {
+  width: min(430px, 100%);
+  min-height: 100%;
+  padding: 29px 24px 24px;
+  overflow-y: auto;
+  background: #fbfdfb;
+  box-shadow: -24px 0 70px rgba(8, 31, 24, 0.23);
+  animation: overlay-enter 280ms cubic-bezier(0.2, 0.75, 0.3, 1) both;
+}
+
+@keyframes overlay-enter {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.screen-overlay-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.screen-overlay-top h2 {
+  margin: 7px 0 6px;
+  font-family: var(--font-serif), serif;
+  font-size: 26px;
+  letter-spacing: -0.04em;
+}
+
+.screen-overlay-top p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.overlay-status-row {
+  margin: 17px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.overlay-field-card {
+  margin-top: 10px;
+  padding: 15px;
+  border: 1px solid #dce5df;
+  border-radius: 12px;
+  background: white;
+}
+
+.overlay-field-card .field-kicker {
+  display: block;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.overlay-field-card strong {
+  display: block;
+  margin-top: 7px;
+  color: var(--ink);
+  font-family: var(--font-serif), serif;
+  font-size: 16px;
+}
+
+.overlay-field-card p {
+  margin: 7px 0 12px;
+  color: var(--ink-soft);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.overlay-field-card .field-status {
+  min-height: 29px;
+  padding: 0 10px;
+}
+
+.restricted-overlay-field {
+  background: #fcfafc;
+  border-color: #e6ddee;
+}
+
+.screen-overlay-footer {
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--forest);
+  color: white;
+  display: grid;
+  gap: 10px;
+}
+
+.screen-overlay-footer > span {
+  color: #b9d8c8;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.screen-overlay-footer .primary-button {
+  background: #e1efe8;
+  color: var(--forest);
+}
+
+.screen-overlay-footer small {
+  color: rgba(255, 255, 255, 0.63);
+  font-size: 8px;
+  line-height: 1.4;
 }
 
 .import-modal {
@@ -2224,6 +2380,12 @@ input:focus-visible {
     width: 100%;
     justify-content: space-between;
   }
+
+  .application-header-actions {
+    flex: 1;
+    justify-content: flex-end;
+  }
+
 
   .application-header-card .progress-ring {
     display: none;

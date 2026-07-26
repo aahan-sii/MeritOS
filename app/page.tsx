@@ -190,7 +190,10 @@ export default function Home() {
   const [importMessage, setImportMessage] = useState("");
   const [reviewRunning, setReviewRunning] = useState(false);
   const [reviewComplete, setReviewComplete] = useState(true);
+  const [reviewedVerifiedCount, setReviewedVerifiedCount] = useState(3);
   const [approvedFields, setApprovedFields] = useState<string[]>(["name"]);
+  const [showOverlay, setShowOverlay] = useState(false);
+  const [overlayApplied, setOverlayApplied] = useState(false);
   const [lens, setLens] = useState("Public service");
   const [toast, setToast] = useState("");
   const [query, setQuery] = useState("");
@@ -206,6 +209,13 @@ export default function Home() {
     () => claims.filter((claim) => claim.status === "verified").length,
     [claims],
   );
+
+  const reviewEvidenceGain = Math.max(0, reviewedVerifiedCount - 3);
+  const evidenceChangesSinceReview = verifiedCount - reviewedVerifiedCount;
+  const reviewRows = reviewerRows.map((reviewer, index) => ({
+    ...reviewer,
+    score: Math.min(99, reviewer.score + reviewEvidenceGain * (index === 2 ? 7 : 3)),
+  }));
 
   function announce(message: string) {
     setToast(message);
@@ -278,12 +288,7 @@ export default function Home() {
         claim.id === id
           ? {
               ...claim,
-              status:
-                claim.status === "verified"
-                  ? "restricted"
-                  : claim.status === "restricted"
-                    ? "draft"
-                    : "verified",
+              status: claim.status === "verified" ? "draft" : "verified",
             }
           : claim,
       ),
@@ -296,7 +301,12 @@ export default function Home() {
     window.setTimeout(() => {
       setReviewRunning(false);
       setReviewComplete(true);
-      announce("Committee review refreshed with current evidence.");
+      setReviewedVerifiedCount(verifiedCount);
+      announce(
+        verifiedCount > 3
+          ? "Review refreshed. Newly verified evidence strengthened the evidence read."
+          : "Committee review refreshed with current evidence.",
+      );
     }, 1300);
   }
 
@@ -306,6 +316,12 @@ export default function Home() {
         ? current.filter((field) => field !== id)
         : [...current, id],
     );
+  }
+
+  function applyOverlaySuggestions() {
+    setApprovedFields(["name", "leadership"]);
+    setOverlayApplied(true);
+    announce("Approved suggestions applied to the preview. No form was submitted.");
   }
 
   const filteredClaims = claims.filter((claim) => {
@@ -630,10 +646,14 @@ export default function Home() {
                       className="secondary-button compact"
                       onClick={() => {
                         toggleClaimStatus(claim.id);
-                        announce("Claim permission updated.");
+                        announce(
+                          claim.status === "verified"
+                            ? "Claim marked for review. Refresh the committee review to reflect it."
+                            : "Claim verified. Run a fresh review to see the impact.",
+                        );
                       }}
                     >
-                      Manage
+                      {claim.status === "verified" ? "Mark for review" : "Verify claim"}
                     </button>
                   </article>
                 ))}
@@ -676,12 +696,20 @@ export default function Home() {
               </div>
               <div className="app-header-status">
                 <ProgressRing value={selectedApp.progress} label="complete" />
-                <button
-                  className="primary-button"
-                  onClick={() => announce("Application review package opened.")}
-                >
-                  Continue application
-                </button>
+                <div className="application-header-actions">
+                  <button
+                    className="secondary-button inverse"
+                    onClick={() => setShowOverlay(true)}
+                  >
+                    Open screen overlay
+                  </button>
+                  <button
+                    className="primary-button"
+                    onClick={() => announce("Application checklist opened.")}
+                  >
+                    Continue application
+                  </button>
+                </div>
               </div>
             </section>
 
@@ -717,11 +745,11 @@ export default function Home() {
               <section className="section-card overlay-demo">
                 <div className="section-heading">
                   <div>
-                    <span className="eyebrow">Live overlay preview</span>
-                    <h2>Field-level control</h2>
+                    <span className="eyebrow">Screen overlay</span>
+                    <h2>Try it before you connect a portal</h2>
                   </div>
                   <span className="live-badge">
-                    <span /> Page understood
+                    <span /> Preview mode
                   </span>
                 </div>
                 <div className="mock-browser">
@@ -779,12 +807,9 @@ export default function Home() {
                   </span>
                   <button
                     className="secondary-button compact"
-                    onClick={() => {
-                      setApprovedFields(["name", "leadership"]);
-                      announce("Two approved fields are ready to fill. No form was submitted.");
-                    }}
+                    onClick={applyOverlaySuggestions}
                   >
-                    Fill approved fields
+                    Apply approved suggestions
                   </button>
                 </div>
               </section>
@@ -798,7 +823,9 @@ export default function Home() {
               <div>
                 <span className="eyebrow">Rhodes Scholarship · simulated committee</span>
                 <h2>
-                  Competitive, with one evidence gap the committee will notice.
+                  {reviewedVerifiedCount > 3
+                    ? "Your verified evidence strengthened the committee’s read."
+                    : "Competitive, with one evidence gap the committee will notice."}
                 </h2>
                 <p>
                   This is a transparent simulation based on the public
@@ -807,7 +834,14 @@ export default function Home() {
                 </p>
               </div>
               <div className="review-actions">
-                <StatusPill tone="gold">Moderate confidence</StatusPill>
+                <div className="review-status-stack">
+                  <StatusPill tone="gold">Moderate confidence</StatusPill>
+                  {evidenceChangesSinceReview !== 0 && (
+                    <span className="review-stale-note">
+                      {Math.abs(evidenceChangesSinceReview)} evidence change{Math.abs(evidenceChangesSinceReview) === 1 ? "" : "s"} not reviewed yet
+                    </span>
+                  )}
+                </div>
                 <button
                   className="primary-button"
                   onClick={runReview}
@@ -828,7 +862,7 @@ export default function Home() {
             {reviewComplete && (
               <>
                 <section className="committee-grid">
-                  {reviewerRows.map((reviewer) => (
+                  {reviewRows.map((reviewer) => (
                     <article className="reviewer-card" key={reviewer.name}>
                       <div className="reviewer-top">
                         <span className={`reviewer-avatar ${reviewer.tone}`}>
@@ -861,10 +895,10 @@ export default function Home() {
                     </div>
                     {[
                       ["Academic preparation", 91, "green"],
-                      ["Leadership and character", 86, "blue"],
+                      ["Leadership and character", 86 + reviewEvidenceGain * 2, "blue"],
                       ["Commitment to service", 89, "violet"],
-                      ["Distinctive contribution", 72, "gold"],
-                      ["Evidence strength", 76, "gold"],
+                      ["Distinctive contribution", 72 + reviewEvidenceGain * 2, "gold"],
+                      ["Evidence strength", 76 + reviewEvidenceGain * 7, "gold"],
                     ].map(([name, score, tone]) => (
                       <div className="rubric-row" key={name}>
                         <span>{name}</span>
@@ -1058,6 +1092,61 @@ export default function Home() {
           </div>
         )}
       </section>
+
+      {showOverlay && (
+        <div className="overlay-backdrop" role="presentation" onMouseDown={() => setShowOverlay(false)}>
+          <aside
+            className="screen-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="screen-overlay-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="screen-overlay-top">
+              <div>
+                <span className="eyebrow">MeritOS screen overlay</span>
+                <h2 id="screen-overlay-title">{selectedApp.name}</h2>
+                <p>Suggestions appear beside fields. You decide what gets applied.</p>
+              </div>
+              <button className="modal-close" onClick={() => setShowOverlay(false)} aria-label="Close overlay">×</button>
+            </div>
+            <div className="overlay-status-row">
+              <StatusPill tone="green">Page understood</StatusPill>
+              <span>Manual submission only</span>
+            </div>
+            <section className="overlay-field-card">
+              <span className="field-kicker">Preferred name</span>
+              <strong>Aahan S.</strong>
+              <p>Matched to verified CV evidence.</p>
+              <button className="field-status green" onClick={() => approveField("name")}>Verified · CV</button>
+            </section>
+            <section className="overlay-field-card">
+              <span className="field-kicker">Leadership response</span>
+              <strong>Assistive-technology research team</strong>
+              <p>Evidence-backed draft. Review the wording before applying it.</p>
+              <button
+                className={`field-status blue ${approvedFields.includes("leadership") ? "approved" : ""}`}
+                onClick={() => approveField("leadership")}
+              >
+                {approvedFields.includes("leadership") ? "Approved by you" : "Approve this draft"}
+              </button>
+            </section>
+            <section className="overlay-field-card restricted-overlay-field">
+              <span className="field-kicker">Financial context</span>
+              <strong>Locked sensitive information</strong>
+              <p>This is intentionally excluded until you grant one-time permission.</p>
+              <button className="field-status violet" onClick={() => announce("Sensitive information stays locked until you explicitly allow it.")}>Ask first</button>
+            </section>
+            <div className="screen-overlay-footer">
+              <span>{approvedFields.length}/3 suggestions approved</span>
+              <button className="primary-button full" onClick={applyOverlaySuggestions}>
+                {overlayApplied ? "Suggestions applied to preview" : "Apply approved suggestions"}
+              </button>
+              <small>MeritOS cannot submit this application for you.</small>
+            </div>
+          </aside>
+        </div>
+      )}
 
       {showSearch && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowSearch(false)}>
