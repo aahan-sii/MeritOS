@@ -38,3 +38,14 @@ test("server-renders the MeritOS application shell", async () => {
   assert.match(html, /No unsupported claim/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
 });
+
+test("ships the protected MeritOS API routes", async () => {
+  const worker = await import("../dist/server/index.js");
+  const request = new Request("https://meritos.local/api/health");
+  const response = await worker.default.fetch(request, {});
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.status, "ok");
+  assert.equal(payload.safeguards.automaticSubmission, false);
+  assert.equal(payload.safeguards.unsupportedClaims, "blocked");
+});
