@@ -324,6 +324,11 @@ export default function Home() {
     setImportMessage("");
   }
 
+  function closeSearch() {
+    setShowSearch(false);
+    setQuery("");
+  }
+
   function toggleClaimStatus(id: number) {
     setClaims((current) =>
       current.map((claim) =>
@@ -1290,7 +1295,7 @@ export default function Home() {
       )}
 
       {showSearch && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowSearch(false)}>
+        <div className="modal-backdrop" role="presentation" onMouseDown={closeSearch}>
           <section
             className="search-modal"
             role="dialog"
@@ -1303,7 +1308,7 @@ export default function Home() {
                 <span className="eyebrow">Find your work</span>
                 <h2 id="search-title">Search evidence and applications</h2>
               </div>
-              <button className="modal-close" onClick={() => setShowSearch(false)} aria-label="Close search">×</button>
+              <button className="modal-close" onClick={closeSearch} aria-label="Close search">×</button>
             </div>
             <label className="search-field">
               <span aria-hidden="true">⌕</span>
@@ -1320,7 +1325,7 @@ export default function Home() {
                   key={claim.id}
                   onClick={() => {
                     setView("lifegraph");
-                    setShowSearch(false);
+                    closeSearch();
                     announce(`Opened evidence: ${claim.title}`);
                   }}
                 >
@@ -1416,6 +1421,7 @@ export default function Home() {
                   className="primary-button"
                   onClick={() => {
                     closeImport();
+                    setQuery("");
                     setView("lifegraph");
                   }}
                 >

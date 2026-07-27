@@ -778,7 +778,7 @@ input:focus-visible {
 
 .trust-panel {
   grid-column: 2;
-  grid-row: 2 / span 2;
+  grid-row: 3 / span 2;
 }
 
 .trust-stat {
