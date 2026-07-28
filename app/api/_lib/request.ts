@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { auth, currentUser } from "@clerk/nextjs/server";
 
 export class ApiError extends Error {
   constructor(
@@ -11,11 +11,19 @@ export class ApiError extends Error {
 }
 
 export async function requireApiUser() {
-  const user = await getChatGPTUser();
-  if (!user) {
-    throw new ApiError(401, "Sign in with ChatGPT to access MeritOS data.");
-  }
-  return user;
+  const { userId } = await auth();
+  if (!userId) throw new ApiError(401, "Sign in to access MeritOS data.");
+  const clerkUser = await currentUser();
+  const email =
+    clerkUser?.primaryEmailAddress?.emailAddress ??
+    clerkUser?.emailAddresses[0]?.emailAddress;
+  if (!email) throw new ApiError(400, "Your account needs an email address.");
+  return {
+    id: userId,
+    email,
+    displayName:
+      clerkUser?.fullName ?? clerkUser?.firstName ?? email.split("@")[0],
+  };
 }
 
 export function jsonError(error: unknown) {

@@ -1,4 +1,28 @@
-import { index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+
+export const profiles = pgTable("profiles", {
+  clerkUserId: text("clerk_user_id").primaryKey(),
+  email: text("email").notNull().unique(),
+  displayName: text("display_name").notNull().default(""),
+  headline: text("headline").notNull().default(""),
+  onboardingComplete: boolean("onboarding_complete").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+});
+
+export const extensionTokens = pgTable(
+  "extension_tokens",
+  {
+    id: text("id").primaryKey(),
+    userEmail: text("user_email").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    label: text("label").notNull().default("Chrome extension"),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("extension_tokens_user_idx").on(table.userEmail)],
+);
 
 export const claims = pgTable(
   "claims",

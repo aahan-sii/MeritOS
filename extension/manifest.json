@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "MeritOS Application Assistant",
+  "version": "0.2.0",
+  "description": "Read application forms, suggest evidence-backed answers, and fill only what you approve.",
+  "permissions": ["sidePanel", "storage", "activeTab"],
+  "host_permissions": ["http://localhost:3000/*", "https://*/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Open MeritOS" },
+  "side_panel": { "default_path": "sidepanel.html" },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

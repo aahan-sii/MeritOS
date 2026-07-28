@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>MeritOS</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header><span class="mark">M</span><div><strong>MeritOS</strong><small>Application assistant</small></div><button id="settingsButton" title="Connection settings">•••</button></header>
+    <main>
+      <section id="connection" class="card setup">
+        <span class="eyebrow">Connect once</span>
+        <h1>Use your verified profile</h1>
+        <p>In MeritOS, choose “Connect Chrome extension,” then paste the connection key here.</p>
+        <label>MeritOS website<input id="baseUrl" value="http://localhost:3000" /></label>
+        <label>Connection key<input id="token" type="password" placeholder="merit_…" /></label>
+        <button id="connectButton" class="primary">Connect profile</button>
+        <p id="connectStatus" class="status"></p>
+      </section>
+      <section id="assistant" hidden>
+        <div class="page-context"><span class="pulse"></span><div><small>Reading this page</small><strong id="pageTitle">Application form</strong></div><button id="rescanButton">Rescan</button></div>
+        <div class="summary"><strong id="fieldCount">0 fields</strong><span id="profileCount">0 verified facts</span></div>
+        <div id="fields" class="fields"></div>
+        <div class="bottom-bar"><span><strong id="approvedCount">0</strong> approved</span><button id="fillApproved" class="primary">Fill approved</button></div>
+        <p class="safety">MeritOS never presses Submit. Review every filled answer on the original page.</p>
+      </section>
+    </main>
+    <script src="sidepanel.js"></script>
+  </body>
+</html>

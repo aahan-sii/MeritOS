@@ -1,6 +1,7 @@
 "use client";
 
 import { DragEvent, useEffect, useMemo, useState } from "react";
+import { SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
 
 type View =
   | "overview"
@@ -12,7 +13,7 @@ type View =
 type ClaimStatus = "verified" | "draft" | "restricted";
 
 type Claim = {
-  id: number;
+  id: string | number;
   title: string;
   detail: string;
   source: string;
@@ -23,7 +24,7 @@ type Claim = {
 
 type ImportStage = "idle" | "selected" | "uploading" | "done" | "error";
 
-const supportedDocumentExtensions = ["pdf", "doc", "docx", "txt"];
+const supportedDocumentExtensions = ["pdf", "docx", "txt"];
 
 function formatFileSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -181,6 +182,7 @@ function Logo() {
 }
 
 export default function Home() {
+  const { isLoaded, isSignedIn, user } = useUser();
   const [view, setView] = useState<View>("overview");
   const [claims, setClaims] = useState(initialClaims);
   const [selectedApplication, setSelectedApplication] = useState("rhodes");
@@ -200,6 +202,11 @@ export default function Home() {
   const [showSearch, setShowSearch] = useState(false);
   const [claimFilter, setClaimFilter] = useState<"all" | "verified" | "review">("all");
   const [tasksAdded, setTasksAdded] = useState(0);
+  const [accountLoading, setAccountLoading] = useState(true);
+  const [onboardingComplete, setOnboardingComplete] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [headline, setHeadline] = useState("");
+  const [extensionToken, setExtensionToken] = useState("");
 
   const selectedApp =
     applications.find((app) => app.id === selectedApplication) ??
@@ -252,6 +259,48 @@ export default function Home() {
     return () => observer.disconnect();
   }, [view, claims.length, reviewComplete]);
 
+  useEffect(() => {
+    if (!isSignedIn) return;
+    let cancelled = false;
+    Promise.all([fetch("/api/profile"), fetch("/api/claims")])
+      .then(async ([profileResponse, claimsResponse]) => {
+        if (!profileResponse.ok || !claimsResponse.ok) throw new Error();
+        const profileData = await profileResponse.json();
+        const claimsData = await claimsResponse.json();
+        if (cancelled) return;
+        setProfileName(profileData.profile.displayName || user?.fullName || "");
+        setHeadline(profileData.profile.headline || "");
+        setOnboardingComplete(profileData.profile.onboardingComplete === true);
+        setClaims(
+          claimsData.claims.map((claim: Record<string, unknown>) => ({
+            id: String(claim.id),
+            title: String(claim.statement),
+            detail: `Imported evidence · ${claim.confidence}% extraction confidence`,
+            source: (() => {
+              try {
+                return JSON.parse(String(claim.evidence))[0]?.filename || "MeritOS profile";
+              } catch {
+                return "MeritOS profile";
+              }
+            })(),
+            evidence: 1,
+            status:
+              claim.status === "verified"
+                ? "verified"
+                : claim.status === "restricted"
+                  ? "restricted"
+                  : "draft",
+            themes: [String(claim.category)],
+          })),
+        );
+      })
+      .catch(() => setClaims([]))
+      .finally(() => !cancelled && setAccountLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [isSignedIn, user?.fullName]);
+
   function announce(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
@@ -294,27 +343,24 @@ export default function Home() {
       const formData = new FormData();
       formData.append("file", selectedFile);
       const response = await fetch("/api/documents", { method: "POST", body: formData });
-      if (!response.ok) throw new Error("Document persistence needs sign-in.");
-      setImportMessage("Securely stored. Text extraction is queued for review.");
-    } catch {
-      setImportMessage("Added to this local workspace. Sign in to store it securely across devices.");
-    }
-    window.setTimeout(() => {
-      setClaims((current) => [
-        ...current,
-        {
-          id: Date.now(),
-          title: `Review material from ${selectedFile.name}`,
-          detail:
-            "A document was added. Confirm extracted facts before using them in any application.",
-          source: selectedFile.name,
-          evidence: 1,
-          status: "draft",
-          themes: ["New evidence"],
-        },
-      ]);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Upload failed.");
+      const imported: Claim[] = data.candidateClaims.map((claim: Record<string, unknown>) => ({
+        id: String(claim.id),
+        title: String(claim.statement),
+        detail: "Extracted from your document. Verify it before MeritOS can use it.",
+        source: selectedFile.name,
+        evidence: 1,
+        status: "draft",
+        themes: ["Imported résumé evidence"],
+      }));
+      setClaims((current) => [...imported, ...current]);
+      setImportMessage(`${imported.length} candidate facts extracted and securely stored.`);
       setImportStage("done");
-    }, 650);
+    } catch (error) {
+      setImportStage("error");
+      setImportMessage(error instanceof Error ? error.message : "Upload failed.");
+    }
   }
 
   function closeImport() {
@@ -329,14 +375,25 @@ export default function Home() {
     setQuery("");
   }
 
-  function toggleClaimStatus(id: number) {
+  async function toggleClaimStatus(id: string | number) {
+    const existing = claims.find((claim) => claim.id === id);
+    if (!existing) return;
+    const status = existing.status === "verified" ? "draft" : "verified";
+    if (typeof id === "string" && id.startsWith("claim_")) {
+      const response = await fetch(`/api/claims/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) {
+        announce("That verification change was not saved.");
+        return;
+      }
+    }
     setClaims((current) =>
       current.map((claim) =>
         claim.id === id
-          ? {
-              ...claim,
-              status: claim.status === "verified" ? "draft" : "verified",
-            }
+          ? { ...claim, status }
           : claim,
       ),
     );
@@ -382,6 +439,95 @@ export default function Home() {
     return matchesFilter && matchesQuery;
   });
 
+  async function finishOnboarding() {
+    const response = await fetch("/api/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        displayName: profileName,
+        headline,
+        onboardingComplete: true,
+      }),
+    });
+    if (!response.ok) {
+      announce("Your setup could not be saved.");
+      return;
+    }
+    setOnboardingComplete(true);
+  }
+
+  async function createExtensionConnection() {
+    const response = await fetch("/api/extension/connect", { method: "POST" });
+    const data = await response.json();
+    if (!response.ok) {
+      announce(data.error || "Could not create an extension connection.");
+      return;
+    }
+    setExtensionToken(data.token);
+    await navigator.clipboard?.writeText(data.token);
+    announce("Connection key copied. Paste it into the MeritOS Chrome side panel.");
+  }
+
+  if (!isLoaded || (isSignedIn && accountLoading)) {
+    return <main className="account-screen"><Logo /><div className="account-loader">Loading your secure workspace…</div></main>;
+  }
+
+  if (!isSignedIn) {
+    return (
+      <main className="account-screen landing-screen">
+        <nav className="landing-nav"><Logo /><div><SignInButton mode="modal"><button className="text-button">Sign in</button></SignInButton><SignUpButton mode="modal"><button className="primary-button">Create account</button></SignUpButton></div></nav>
+        <section className="landing-hero">
+          <span className="eyebrow">Your verified application profile</span>
+          <h1>Upload your experience once.<br />Use it wherever you apply.</h1>
+          <p>MeritOS turns your résumé into facts you control, then its Chrome side panel helps answer grant, scholarship, graduate, and job application forms.</p>
+          <SignUpButton mode="modal"><button className="primary-button large">Create your MeritOS profile</button></SignUpButton>
+          <div className="product-flow"><span>1 · Import résumé</span><span>2 · Verify facts</span><span>3 · Open any application</span><span>4 · Approve and fill</span></div>
+        </section>
+      </main>
+    );
+  }
+
+  if (!onboardingComplete) {
+    return (
+      <main className="account-screen onboarding-screen">
+        <nav className="landing-nav"><Logo /><UserButton /></nav>
+        <section className="onboarding-card">
+          <div className="onboarding-progress"><span className="active">Account</span><span className="active">Profile</span><span>Extension</span></div>
+          <span className="eyebrow">One-time setup</span>
+          <h1>Build the profile MeritOS can use</h1>
+          <p>This setup disappears when you finish. Your documents and verified facts stay in your account.</p>
+          <div className="onboarding-fields">
+            <label>Your name<input value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder="Your full name" /></label>
+            <label>One-line focus<input value={headline} onChange={(event) => setHeadline(event.target.value)} placeholder="e.g. Computer science student focused on accessible technology" /></label>
+          </div>
+          <div className="onboarding-import">
+            <div><strong>1. Upload your résumé</strong><small>PDF, DOCX, or TXT. MeritOS extracts candidates from the real file.</small></div>
+            <button className="secondary-button" onClick={() => setShowImport(true)}>Choose document</button>
+          </div>
+          <div className="onboarding-import">
+            <div><strong>2. Verify extracted facts</strong><small>{claims.length ? `${verifiedCount} of ${claims.length} facts verified` : "Upload a document to begin."}</small></div>
+            <span className="status-pill neutral">{claims.length ? "Review below" : "Waiting"}</span>
+          </div>
+          {claims.length > 0 && <div className="onboarding-claims">{claims.map((claim) => <article key={claim.id}><div><strong>{claim.title}</strong><small>{claim.source}</small></div><button className={claim.status === "verified" ? "secondary-button" : "primary-button"} onClick={() => toggleClaimStatus(claim.id)}>{claim.status === "verified" ? "Verified ✓" : "Verify fact"}</button></article>)}</div>}
+          <button className="primary-button onboarding-finish" disabled={!profileName.trim() || verifiedCount === 0} onClick={finishOnboarding}>Finish setup and open workspace</button>
+          {verifiedCount === 0 && <small className="finish-hint">Verify at least one real fact before finishing.</small>}
+        </section>
+        {showImport && (
+          <div className="modal-backdrop" role="presentation" onMouseDown={closeImport}>
+            <section className="import-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+              <button className="modal-close" onClick={closeImport}>×</button>
+              <span className="eyebrow">Résumé import</span><h2>Add your résumé</h2>
+              {(importStage === "idle" || importStage === "error") && <><label className="drop-zone" onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}><input type="file" accept=".pdf,.docx,.txt" onChange={(event) => chooseFile(event.target.files?.[0])} /><strong>Choose a PDF, DOCX, or TXT file</strong><small>Up to 12 MB</small></label>{importMessage && <p className="form-error">{importMessage}</p>}</>}
+              {importStage === "selected" && selectedFile && <div className="selected-file"><div><strong>{selectedFile.name}</strong><span>{formatFileSize(selectedFile.size)}</span></div><button className="primary-button" onClick={runImport}>Extract facts</button></div>}
+              {importStage === "uploading" && <div className="import-progress"><h3>Reading your document…</h3><div className="loading-bar"><span /></div></div>}
+              {importStage === "done" && <div className="import-result"><span className="result-check">✓</span><h3>Facts ready to verify</h3><p>{importMessage}</p><button className="primary-button" onClick={closeImport}>Review now</button></div>}
+            </section>
+          </div>
+        )}
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -416,14 +562,13 @@ export default function Home() {
           <p>3 active · 1 review ready</p>
         </div>
 
-        <button className="profile-card" onClick={() => announce("Profile settings opened.")}>
-          <span className="avatar">AS</span>
+        <div className="profile-card">
+          <UserButton />
           <span>
-            <strong>Aahan S.</strong>
-            <small>Local-first workspace</small>
+            <strong>{profileName || user?.firstName || "Your profile"}</strong>
+            <small>{headline || "Verified workspace"}</small>
           </span>
-          <span aria-hidden="true">•••</span>
-        </button>
+        </div>
       </aside>
 
       <section className="workspace">
@@ -500,6 +645,17 @@ export default function Home() {
                   </div>
                 </div>
               </div>
+            </section>
+
+            <section className="extension-banner">
+              <div className="extension-visual" aria-hidden="true"><span>M</span><i /><i /><i /></div>
+              <div>
+                <span className="eyebrow">Use MeritOS on application websites</span>
+                <h2>Install the Chrome side panel</h2>
+                <p>Open a grant or application form, click MeritOS, review detected questions, and fill only the answers you approve.</p>
+                {extensionToken && <code>{extensionToken}</code>}
+              </div>
+              <button className="primary-button" onClick={createExtensionConnection}>{extensionToken ? "Copy new connection key" : "Connect Chrome extension"}</button>
             </section>
 
             <section className="guided-path" aria-labelledby="guided-path-title">
