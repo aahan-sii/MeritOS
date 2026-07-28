@@ -24,8 +24,8 @@ This is a standard Next.js application and deploys directly through Vercel.
 
 1. Import `aahan-sii/MeritOS` in Vercel.
 2. Add `DATABASE_URL` from Neon in **Settings → Environment Variables**.
-3. Create and connect a Vercel Blob store; Vercel adds
-   `BLOB_READ_WRITE_TOKEN` automatically.
+3. Create and connect a private Vercel Blob store. New projects use automatic
+   OIDC authentication; legacy stores may add `BLOB_READ_WRITE_TOKEN`.
 4. In Clerk, create an application. Add `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
    and `CLERK_SECRET_KEY` to Vercel.
 5. Run `npm run db:migrate` locally with the production `DATABASE_URL`.
