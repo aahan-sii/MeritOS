@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { documents } from "@/db/schema";
 import { recordAuditEvent } from "../_lib/audit";
-import { getFilesBucket } from "../_lib/storage";
+import { storePrivateDocument } from "../_lib/storage";
 import { ApiError, id, jsonError, requireApiUser } from "../_lib/request";
 
 const MAX_DOCUMENT_BYTES = 12 * 1024 * 1024;
@@ -50,11 +50,11 @@ export async function POST(request: NextRequest) {
 
     const documentId = id("doc");
     const storageKey = `${user.email}/${documentId}/${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-    const bucket = await getFilesBucket();
-    await bucket.put(storageKey, await file.arrayBuffer(), {
-      httpMetadata: { contentType: file.type || "application/octet-stream" },
-      customMetadata: { userEmail: user.email, filename: file.name },
-    });
+    const storedFile = await storePrivateDocument(
+      storageKey,
+      await file.arrayBuffer(),
+      file.type || "application/octet-stream",
+    );
 
     const document = {
       id: documentId,
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
       filename: file.name,
       contentType: file.type || "application/octet-stream",
       sizeBytes: file.size,
-      storageKey,
+      storageKey: storedFile.url,
       processingStatus: "stored" as const,
       extractedText: null,
       createdAt: new Date(),

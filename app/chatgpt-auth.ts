@@ -19,7 +19,15 @@ const CALLBACK_PATH = "/callback";
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const requestHeaders = await headers();
   const email = requestHeaders.get(USER_EMAIL_HEADER);
-  if (!email) return null;
+  if (!email) {
+    // Vercel does not inject Codex/ChatGPT identity headers. A single-user
+    // deployment can opt into this explicit demo identity until a full auth
+    // provider is connected.
+    const demoEmail = process.env.MERITOS_DEMO_EMAIL;
+    return demoEmail
+      ? { displayName: demoEmail, email: demoEmail, fullName: null }
+      : null;
+  }
 
   const encodedFullName = requestHeaders.get(USER_FULL_NAME_HEADER);
   const fullName =

@@ -1,6 +1,6 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
-export const claims = sqliteTable(
+export const claims = pgTable(
   "claims",
   {
     id: text("id").primaryKey(),
@@ -20,13 +20,13 @@ export const claims = sqliteTable(
       .default("standard"),
     allowedUses: text("allowed_uses").notNull().default("[]"),
     confidence: integer("confidence").notNull().default(0),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
   },
   (table) => [index("claims_user_updated_idx").on(table.userEmail, table.updatedAt)],
 );
 
-export const opportunities = sqliteTable(
+export const opportunities = pgTable(
   "opportunities",
   {
     id: text("id").primaryKey(),
@@ -34,19 +34,19 @@ export const opportunities = sqliteTable(
     title: text("title").notNull(),
     organization: text("organization").notNull(),
     url: text("url").notNull(),
-    deadline: integer("deadline", { mode: "timestamp_ms" }),
+    deadline: timestamp("deadline", { withTimezone: true }),
     eligibility: text("eligibility").notNull().default("{}"),
     aiPolicy: text("ai_policy").notNull().default("unknown"),
     sourceText: text("source_text").notNull().default(""),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
   },
   (table) => [
     index("opportunities_user_deadline_idx").on(table.userEmail, table.deadline),
   ],
 );
 
-export const applications = sqliteTable(
+export const applications = pgTable(
   "applications",
   {
     id: text("id").primaryKey(),
@@ -62,9 +62,9 @@ export const applications = sqliteTable(
     }),
     submissionSnapshot: text("submission_snapshot"),
     confirmationNumber: text("confirmation_number"),
-    submittedAt: integer("submitted_at", { mode: "timestamp_ms" }),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
   },
   (table) => [
     index("applications_user_updated_idx").on(table.userEmail, table.updatedAt),
@@ -72,7 +72,7 @@ export const applications = sqliteTable(
   ],
 );
 
-export const auditEvents = sqliteTable(
+export const auditEvents = pgTable(
   "audit_events",
   {
     id: text("id").primaryKey(),
@@ -81,12 +81,12 @@ export const auditEvents = sqliteTable(
     entityId: text("entity_id").notNull(),
     action: text("action").notNull(),
     detail: text("detail").notNull().default("{}"),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   },
   (table) => [index("audit_user_created_idx").on(table.userEmail, table.createdAt)],
 );
 
-export const documents = sqliteTable(
+export const documents = pgTable(
   "documents",
   {
     id: text("id").primaryKey(),
@@ -101,7 +101,7 @@ export const documents = sqliteTable(
       .notNull()
       .default("stored"),
     extractedText: text("extracted_text"),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   },
   (table) => [index("documents_user_created_idx").on(table.userEmail, table.createdAt)],
 );

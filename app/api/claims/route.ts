@@ -44,7 +44,12 @@ export async function POST(request: NextRequest) {
       throw new ApiError(400, "status is invalid.");
     }
     const confidence = body.confidence ?? 0;
-    if (!Number.isInteger(confidence) || confidence < 0 || confidence > 100) {
+    if (
+      typeof confidence !== "number" ||
+      !Number.isInteger(confidence) ||
+      confidence < 0 ||
+      confidence > 100
+    ) {
       throw new ApiError(400, "confidence must be an integer between 0 and 100.");
     }
 

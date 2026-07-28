@@ -1,16 +1,19 @@
-type StorageEnv = {
-  FILES?: R2Bucket;
-};
+import { put } from "@vercel/blob";
 
-async function getStorageEnv(): Promise<StorageEnv> {
-  const moduleName = "cloudflare:workers";
-  return ((await import(/* @vite-ignore */ moduleName)) as { env: StorageEnv }).env;
-}
-
-export async function getFilesBucket() {
-  const { env } = await getStorageEnv();
-  if (!env.FILES) {
-    throw new Error("MeritOS file storage is unavailable.");
+export async function storePrivateDocument(
+  pathname: string,
+  body: ArrayBuffer,
+  contentType: string,
+) {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    throw new Error(
+      "BLOB_READ_WRITE_TOKEN is unavailable. Create a Vercel Blob store and connect it to this project.",
+    );
   }
-  return env.FILES;
+
+  return put(pathname, body, {
+    access: "private",
+    contentType,
+    addRandomSuffix: true,
+  });
 }
