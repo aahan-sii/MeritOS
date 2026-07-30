@@ -19,94 +19,8 @@ async function sendToPage(message) {
   return chrome.tabs.sendMessage(tab.id, message);
 }
 
-function questionIntent(field) {
-  const value = `${field.label} ${field.type} ${field.name || ""}`.toLowerCase();
-  if (field.type === "email" || /\b(e-?mail|email address)\b/.test(value)) return "email";
-  if (/\b(full name|legal name|applicant name|your name)\b/.test(value)) return "name";
-  if (/\b(school|institution|university|college|organization|organisation|employer)\b/.test(value)) return "institution";
-  if (/\b(why.*apply|why.*fellowship|motivation|motivated|interest in this|personal statement|statement of purpose)\b/.test(value)) return "motivation";
-  if (/\b(research|laboratory|experiment|publication|academic investigation)\b/.test(value)) return "research";
-  if (/\b(leadership|initiative|led a|manage|mentor|team leader)\b/.test(value)) return "leadership";
-  if (/\b(project|built|developed|created|technical work|impact)\b/.test(value)) return "project";
-  if (/\b(community|volunteer|service|outreach|contributed|civic)\b/.test(value)) return "community";
-  if (/\b(award|honou?r|achievement|distinction|recognition|scholarship)\b/.test(value)) return "award";
-  if (/\b(education|coursework|degree|gpa|academic background)\b/.test(value)) return "education";
-  return "unknown";
-}
-
-function claimIntent(claim) {
-  const value = `${claim.category} ${claim.statement}`.toLowerCase();
-  if (/\b(award|honou?r(?:able)?|distinction|dean'?s list|finalist|winner|scholarship|medal|champion|gold|silver|bronze)\b/.test(value)) return "award";
-  if (/\b(volunteer|community service|nonprofit|outreach|tutor(?:ed|ing)?|fundrais)\b/.test(value)) return "community";
-  if (/\b(led|founded|president|captain|chair|coordinated|organized|managed|mentored|supervised)\b/.test(value)) return "leadership";
-  if (/\b(research|laboratory|lab\b|genomics|bioinformatics|publication|poster|abstract|experiment)\b/.test(value)) return "research";
-  if (/\b(project|built|developed|designed|created|implemented|engineered|prototype|platform)\b/.test(value)) return "project";
-  if (/\b(university|college|school|academy|degree|gpa|coursework|graduat(?:ed|ion))\b/.test(value)) return "education";
-  if (/\b(motivation|reason for applying|career goal|aspire|passion)\b/.test(value)) return "motivation";
-  return "unknown";
-}
-
-function identitySuggestion(intent, field) {
-  if (intent === "name" && state.identity.displayName) {
-    return { text: state.identity.displayName, source: "Account profile · verified identity", intent };
-  }
-  if (intent === "email" && state.identity.email) {
-    return { text: state.identity.email, source: "Account profile · verified email", intent };
-  }
-  if (intent === "institution") {
-    const education = state.claims.find((claim) => claimIntent(claim) === "education");
-    if (education) {
-      return {
-        text: education.statement.slice(0, field.maxLength || 500),
-        source: `Verified profile · ${education.category}`,
-        intent,
-      };
-    }
-  }
-  return null;
-}
-
 function suggestionFor(field) {
-  const intent = questionIntent(field);
-  const identity = identitySuggestion(intent, field);
-  if (identity) return identity;
-
-  if (intent === "motivation") {
-    const motivation = state.claims.filter((claim) => claimIntent(claim) === "motivation");
-    if (!motivation.length) {
-      return {
-        text: "",
-        source: "Needs your input — a résumé cannot prove why you want this specific opportunity",
-        intent,
-      };
-    }
-  }
-  if (intent === "unknown") {
-    return { text: "", source: "Question intent is unclear — answer manually", intent };
-  }
-
-  const ranked = state.claims
-    .map((claim) => ({ claim, type: claimIntent(claim) }))
-    .filter((item) => item.type === intent);
-  if (!ranked.length) {
-    return {
-      text: "",
-      source: `No verified ${intent} evidence found — answer manually or add evidence`,
-      intent,
-    };
-  }
-
-  const narrative = ["research", "leadership", "project", "community"].includes(intent);
-  const selected = ranked.slice(0, narrative ? 2 : 1);
-  return {
-    text: selected
-      .map((item) => item.claim.statement.trim())
-      .filter(Boolean)
-      .join("\n\n")
-      .slice(0, field.maxLength || 2000),
-    source: `${selected.length} verified ${intent} evidence item${selected.length === 1 ? "" : "s"}`,
-    intent,
-  };
+  return globalThis.MeritOSIntelligence.suggest(field, state.claims, state.identity);
 }
 
 function updateApprovalCount() {
@@ -189,9 +103,7 @@ $("settingsButton").addEventListener("click", () => {
   $("assistant").hidden = !$("assistant").hidden;
 });
 $("selectAll").addEventListener("click", () => {
-  state.approved = new Set(
-    state.fields.filter((field) => state.suggestions.get(field.id)?.text).map((field) => field.id),
-  );
+  state.approved = new Set(state.fields.filter((field) => state.suggestions.get(field.id)?.text).map((field) => field.id));
   renderFields();
 });
 $("clearSelections").addEventListener("click", () => {

@@ -7,6 +7,7 @@ import { extractText, getDocumentProxy } from "unpdf";
 import { recordAuditEvent } from "../_lib/audit";
 import { storePrivateDocument } from "../_lib/storage";
 import { ApiError, id, jsonError, requireApiUser } from "../_lib/request";
+import { extractResumeEvidence } from "@/lib/resume-intelligence";
 
 const MAX_DOCUMENT_BYTES = 12 * 1024 * 1024;
 const acceptedExtensions = new Set(["pdf", "docx", "txt"]);
@@ -100,6 +101,8 @@ function categorizeStatement(statement: string) {
   return "Other résumé evidence";
 }
 
+void candidateStatements;
+
 export async function GET() {
   try {
     const user = await requireApiUser();
@@ -161,7 +164,7 @@ export async function POST(request: NextRequest) {
     const db = await getDb();
     await db.insert(documents).values(document);
     const now = new Date();
-    const candidates = candidateStatements(extractedText).map(({ statement, category }) => ({
+    const candidates = extractResumeEvidence(extractedText).map(({ statement, category }) => ({
       id: id("claim"),
       userEmail: user.email,
       category,
