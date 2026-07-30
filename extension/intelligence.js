@@ -93,5 +93,10 @@
       : { text: "", source: `No verified ${intent} evidence found — answer manually or add evidence`, intent, kind: "missing" };
   }
 
-  root.MeritOSIntelligence = { questionIntent, claimIntent, bestInstitution, suggest };
+  function canDraftField(field) {
+    const intent = questionIntent(field);
+    return ["research", "leadership", "project", "community", "award", "education"].includes(intent);
+  }
+
+  root.MeritOSIntelligence = { questionIntent, claimIntent, bestInstitution, suggest, canDraftField };
 })(globalThis);

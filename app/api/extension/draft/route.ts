@@ -1,0 +1,58 @@
+import { and, desc, eq } from "drizzle-orm";
+import { NextRequest, NextResponse } from "next/server";
+import { createGroundedDraft, type DraftField } from "@/lib/ai-drafting";
+import { claims } from "@/db/schema";
+import { extensionCorsHeaders, requireExtensionConnection } from "../_lib";
+
+export const runtime = "nodejs";
+
+export function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: extensionCorsHeaders });
+}
+
+function fieldFrom(value: unknown): DraftField | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate.label !== "string" || !candidate.label.trim() || candidate.label.length > 500) return null;
+  return {
+    id: typeof candidate.id === "string" ? candidate.id.slice(0, 200) : undefined,
+    label: candidate.label,
+    kind: typeof candidate.kind === "string" ? candidate.kind.slice(0, 80) : undefined,
+    type: typeof candidate.type === "string" ? candidate.type.slice(0, 80) : undefined,
+    name: typeof candidate.name === "string" ? candidate.name.slice(0, 160) : undefined,
+    maxLength: typeof candidate.maxLength === "number" ? candidate.maxLength : undefined,
+  };
+}
+
+export async function POST(request: NextRequest) {
+  const connection = await requireExtensionConnection(request);
+  if (!connection) {
+    return NextResponse.json({ error: "Connect MeritOS first." }, { status: 401, headers: extensionCorsHeaders });
+  }
+  try {
+    const body = await request.json();
+    const field = fieldFrom(body?.field);
+    if (!field) {
+      return NextResponse.json({ error: "A valid application field is required." }, { status: 400, headers: extensionCorsHeaders });
+    }
+    const page = body?.page && typeof body.page === "object" ? body.page as Record<string, unknown> : {};
+    const rows = await connection.db
+      .select({ id: claims.id, category: claims.category, statement: claims.statement })
+      .from(claims)
+      .where(and(eq(claims.userEmail, connection.connection.userEmail), eq(claims.status, "verified")))
+      .orderBy(desc(claims.updatedAt))
+      .limit(12);
+    const result = await createGroundedDraft({
+      field,
+      page: {
+        title: typeof page.title === "string" ? page.title.slice(0, 300) : "",
+        url: typeof page.url === "string" ? page.url.slice(0, 1_000) : "",
+      },
+      evidence: rows,
+    });
+    return NextResponse.json(result, { headers: extensionCorsHeaders });
+  } catch (error) {
+    console.error("MeritOS draft error", error);
+    return NextResponse.json({ error: "MeritOS could not create a draft right now. Your application was not changed." }, { status: 500, headers: extensionCorsHeaders });
+  }
+}

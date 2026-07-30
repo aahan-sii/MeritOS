@@ -1,39 +1,18 @@
-import { createHash } from "node:crypto";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/db";
-import { claims, extensionTokens, profiles } from "@/db/schema";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-};
+import { claims, profiles } from "@/db/schema";
+import { extensionCorsHeaders, requireExtensionConnection } from "../_lib";
 
 export function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: corsHeaders });
+  return new NextResponse(null, { status: 204, headers: extensionCorsHeaders });
 }
 
 export async function GET(request: NextRequest) {
-  const raw = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!raw?.startsWith("merit_")) {
-    return NextResponse.json({ error: "Connect MeritOS first." }, { status: 401, headers: corsHeaders });
-  }
-  const db = await getDb();
-  const hash = createHash("sha256").update(raw).digest("hex");
-  const [connection] = await db
-    .select()
-    .from(extensionTokens)
-    .where(and(eq(extensionTokens.tokenHash, hash), isNull(extensionTokens.revokedAt)))
-    .limit(1);
+  const connection = await requireExtensionConnection(request);
   if (!connection) {
-    return NextResponse.json({ error: "This connection key is invalid or revoked." }, { status: 401, headers: corsHeaders });
+    return NextResponse.json({ error: "This connection key is invalid or revoked." }, { status: 401, headers: extensionCorsHeaders });
   }
-  await db
-    .update(extensionTokens)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(extensionTokens.id, connection.id));
-  const rows = await db
+  const rows = await connection.db
     .select({
       id: claims.id,
       category: claims.category,
@@ -42,23 +21,23 @@ export async function GET(request: NextRequest) {
       sensitivity: claims.sensitivity,
     })
     .from(claims)
-    .where(and(eq(claims.userEmail, connection.userEmail), eq(claims.status, "verified")))
+    .where(and(eq(claims.userEmail, connection.connection.userEmail), eq(claims.status, "verified")))
     .orderBy(desc(claims.updatedAt));
-  const [accountProfile] = await db
+  const [accountProfile] = await connection.db
     .select({
       displayName: profiles.displayName,
       email: profiles.email,
       headline: profiles.headline,
     })
     .from(profiles)
-    .where(eq(profiles.email, connection.userEmail))
+    .where(eq(profiles.email, connection.connection.userEmail))
     .limit(1);
   return NextResponse.json(
     {
       profile: {
         identity: {
           displayName: accountProfile?.displayName ?? "",
-          email: accountProfile?.email ?? connection.userEmail,
+          email: accountProfile?.email ?? connection.connection.userEmail,
           headline: accountProfile?.headline ?? "",
         },
         claims: rows.map((row) => ({
@@ -67,6 +46,6 @@ export async function GET(request: NextRequest) {
         })),
       },
     },
-    { headers: corsHeaders },
+    { headers: extensionCorsHeaders },
   );
 }

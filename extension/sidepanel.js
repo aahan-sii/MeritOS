@@ -3,6 +3,7 @@ const state = {
   identity: { displayName: "", email: "", headline: "" },
   fields: [],
   suggestions: new Map(),
+  aiSuggestions: new Map(),
   approved: new Set(),
   baseUrl: "",
   token: "",
@@ -23,6 +24,10 @@ function suggestionFor(field) {
   return globalThis.MeritOSIntelligence.suggest(field, state.claims, state.identity);
 }
 
+function canUseAi(field) {
+  return globalThis.MeritOSIntelligence.canDraftField(field);
+}
+
 function updateApprovalCount() {
   $("approvedCount").textContent = state.approved.size;
   $("fillApproved").disabled = state.approved.size === 0;
@@ -34,11 +39,11 @@ function renderFields() {
   $("fields").innerHTML = "";
   state.suggestions.clear();
   state.fields.forEach((field) => {
-    const suggestion = suggestionFor(field);
+    const suggestion = state.aiSuggestions.get(field.id) || suggestionFor(field);
     state.suggestions.set(field.id, suggestion);
     const card = document.createElement("article");
     card.className = `field ${suggestion.text ? "supported" : "unsupported"}`;
-    card.innerHTML = `<div class="field-top"><input type="checkbox" aria-label="Approve answer"><div><h2></h2><div class="meta"></div></div><span class="intent"></span></div><div class="suggestion"></div><div class="evidence"></div>`;
+    card.innerHTML = `<div class="field-top"><input type="checkbox" aria-label="Approve answer"><div><h2></h2><div class="meta"></div></div><span class="intent"></span></div><div class="suggestion"></div><div class="evidence"></div><div class="field-actions"></div>`;
     card.querySelector("h2").textContent = field.label;
     card.querySelector(".meta").textContent = `${field.required ? "Required" : "Optional"} · ${field.kind}`;
     card.querySelector(".intent").textContent = suggestion.intent === "unknown" ? "Needs review" : suggestion.intent;
@@ -52,6 +57,13 @@ function renderFields() {
       else state.approved.delete(field.id);
       updateApprovalCount();
     });
+    if (canUseAi(field)) {
+      const draftButton = document.createElement("button");
+      draftButton.className = "draft-button";
+      draftButton.textContent = suggestion.kind === "ai" ? "Redraft with AI" : "Draft with AI";
+      draftButton.addEventListener("click", async () => generateDraft(field, draftButton));
+      card.querySelector(".field-actions").append(draftButton);
+    }
     $("fields").append(card);
   });
   if (!state.fields.length) {
@@ -65,6 +77,7 @@ async function scan() {
     const result = await sendToPage({ type: "MERITOS_SCAN" });
     state.fields = result.fields;
     state.approved.clear();
+    state.aiSuggestions.clear();
     $("pageTitle").textContent = result.title || "Application form";
     $("fillApproved").textContent = "Fill selected";
     renderFields();
@@ -72,6 +85,40 @@ async function scan() {
     state.fields = [];
     renderFields();
     $("pageTitle").textContent = "Open a regular website to scan it";
+  }
+}
+
+async function generateDraft(field, button) {
+  button.disabled = true;
+  button.textContent = "Drafting...";
+  try {
+    const tab = await activeTab();
+    const response = await fetch(`${state.baseUrl}/api/extension/draft`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${state.token}` },
+      body: JSON.stringify({ field, page: { title: tab?.title || "", url: tab?.url || "" } }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not draft this answer.");
+    if (data.status === "draft" && data.draft) {
+      state.aiSuggestions.set(field.id, {
+        text: data.draft,
+        source: `AI draft grounded in ${data.usedEvidenceIds.length} verified fact${data.usedEvidenceIds.length === 1 ? "" : "s"} — review before filling`,
+        intent: suggestionFor(field).intent,
+        kind: "ai",
+      });
+    } else {
+      state.aiSuggestions.set(field.id, {
+        text: "",
+        source: data.questions?.[0] || "MeritOS needs more verified information before it can draft this safely.",
+        intent: suggestionFor(field).intent,
+        kind: "missing",
+      });
+    }
+    renderFields();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = error.message || "Try drafting again";
   }
 }
 

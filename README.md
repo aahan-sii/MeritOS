@@ -8,7 +8,7 @@ application automatically and flags unsupported claims before they are used.
 
 1. Create a Clerk application and copy its publishable and secret keys.
 2. Create `.env.local` from `.env.example`.
-3. Add your Neon `DATABASE_URL`, Vercel Blob token, and Clerk keys.
+3. Add your Neon `DATABASE_URL`, Clerk keys, and (optional) OpenAI API key.
 
 ```bash
 npm install
@@ -28,8 +28,12 @@ This is a standard Next.js application and deploys directly through Vercel.
    OIDC authentication; legacy stores may add `BLOB_READ_WRITE_TOKEN`.
 4. In Clerk, create an application. Add `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
    and `CLERK_SECRET_KEY` to Vercel.
-5. Run `npm run db:migrate` locally with the production `DATABASE_URL`.
-6. Deploy. Vercel automatically runs `npm run build`.
+5. To enable evidence-backed AI drafting, add `OPENAI_API_KEY` in Vercel. Mark it
+   Sensitive and enable Production and Preview. Do not place it in the extension
+   or in a `NEXT_PUBLIC_` variable. `OPENAI_MODEL` is optional; the default is
+   `gpt-5.6-terra`.
+6. Run `npm run db:migrate` locally with the production `DATABASE_URL`.
+7. Deploy. Vercel automatically runs `npm run build`.
 
 ## Database migration
 
@@ -51,7 +55,9 @@ The working Manifest V3 extension is in `extension/`.
 5. On the dashboard, select **Connect Chrome extension**.
 6. Open MeritOS from Chrome's toolbar and paste the connection key.
 7. Visit an application form. Open MeritOS, review the detected fields, check
-   supported answers, and select **Fill approved**.
+   supported answers, or select **Draft with AI** for a narrative answer.
+8. Check only the answers you want, then select **Fill selected**. The extension
+   never presses Submit.
 
 The extension does not submit forms and does not use unverified claims.
 
