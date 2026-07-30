@@ -31,6 +31,7 @@ function scan() {
       return {
         id: element.dataset.meritosFieldId,
         label: labelFor(element),
+        name: element.getAttribute("name") || element.id || "",
         kind: element.tagName.toLowerCase(),
         type: element.getAttribute("type") || "",
         currentValue: "value" in element ? element.value : element.innerText,
@@ -74,4 +75,50 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 const initialFields = scan();
 if (initialFields.length >= 2) {
   chrome.runtime.sendMessage({ type: "MERITOS_FORM_DETECTED", count: initialFields.length });
+  showLauncher(initialFields.length);
 }
+
+function showLauncher(count) {
+  if (document.getElementById("meritos-launcher-host")) {
+    const host = document.getElementById("meritos-launcher-host");
+    host.shadowRoot.querySelector("[data-count]").textContent = `${count} fields`;
+    return;
+  }
+  const host = document.createElement("div");
+  host.id = "meritos-launcher-host";
+  host.style.cssText = "position:fixed;right:20px;bottom:20px;z-index:2147483647";
+  const root = host.attachShadow({ mode: "open" });
+  root.innerHTML = `
+    <style>
+      .wrap{display:flex;align-items:center;gap:6px;font:600 13px/1.2 Inter,ui-sans-serif,system-ui}
+      .open{display:flex;align-items:center;gap:9px;padding:10px 13px 10px 10px;border:1px solid #8992ff66;border-radius:13px;background:#101426;color:#f7f8ff;box-shadow:0 14px 38px #090b1680;cursor:pointer}
+      .mark{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#6976ff,#926cff);font-weight:800}
+      small{display:block;margin-top:2px;color:#9ba2bb;font-size:10px;font-weight:500}
+      .close{width:26px;height:26px;padding:0;border:0;border-radius:50%;background:#101426;color:#8e95aa;cursor:pointer}
+      .open:focus-visible,.close:focus-visible{outline:3px solid #7984ff;outline-offset:2px}
+    </style>
+    <div class="wrap">
+      <button class="open" type="button" aria-label="Open MeritOS application assistant">
+        <span class="mark">M</span><span>Open MeritOS<small data-count>${count} fields</small></span>
+      </button>
+      <button class="close" type="button" aria-label="Hide MeritOS button">×</button>
+    </div>`;
+  root.querySelector(".open").addEventListener("click", () => {
+    chrome.runtime.sendMessage({ type: "MERITOS_OPEN_SIDE_PANEL" });
+  });
+  root.querySelector(".close").addEventListener("click", () => host.remove());
+  document.documentElement.append(host);
+}
+
+let rescanTimer;
+const formObserver = new MutationObserver(() => {
+  clearTimeout(rescanTimer);
+  rescanTimer = setTimeout(() => {
+    const fields = scan();
+    if (fields.length >= 2) {
+      chrome.runtime.sendMessage({ type: "MERITOS_FORM_DETECTED", count: fields.length });
+      showLauncher(fields.length);
+    }
+  }, 700);
+});
+formObserver.observe(document.documentElement, { childList: true, subtree: true });

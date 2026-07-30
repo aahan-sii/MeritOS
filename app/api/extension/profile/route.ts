@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/db";
-import { claims, extensionTokens } from "@/db/schema";
+import { claims, extensionTokens, profiles } from "@/db/schema";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -44,8 +44,29 @@ export async function GET(request: NextRequest) {
     .from(claims)
     .where(and(eq(claims.userEmail, connection.userEmail), eq(claims.status, "verified")))
     .orderBy(desc(claims.updatedAt));
+  const [accountProfile] = await db
+    .select({
+      displayName: profiles.displayName,
+      email: profiles.email,
+      headline: profiles.headline,
+    })
+    .from(profiles)
+    .where(eq(profiles.email, connection.userEmail))
+    .limit(1);
   return NextResponse.json(
-    { profile: { claims: rows.map((row) => ({ ...row, evidence: JSON.parse(row.evidence) })) } },
+    {
+      profile: {
+        identity: {
+          displayName: accountProfile?.displayName ?? "",
+          email: accountProfile?.email ?? connection.userEmail,
+          headline: accountProfile?.headline ?? "",
+        },
+        claims: rows.map((row) => ({
+          ...row,
+          evidence: JSON.parse(row.evidence),
+        })),
+      },
+    },
     { headers: corsHeaders },
   );
 }

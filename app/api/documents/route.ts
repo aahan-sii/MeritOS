@@ -31,20 +31,73 @@ async function extractDocumentText(file: File) {
   throw new ApiError(400, "Legacy .doc files cannot be extracted reliably. Save it as DOCX or PDF first.");
 }
 
+function sectionCategory(section: string) {
+  const value = section.toLowerCase();
+  if (/award|honou?r|achievement|distinction|recognition/.test(value)) return "Award or distinction";
+  if (/community|volunteer|service|outreach/.test(value)) return "Community contribution";
+  if (/leadership|activities|extracurricular/.test(value)) return "Leadership";
+  if (/research|publication|poster/.test(value)) return "Research experience";
+  if (/project|portfolio/.test(value)) return "Project or impact";
+  if (/education|school|academic|coursework/.test(value)) return "Education";
+  if (/experience|employment|work|internship/.test(value)) return "Professional experience";
+  return "";
+}
+
 function candidateStatements(text: string) {
   const seen = new Set<string>();
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.replace(/^[\s•●▪◦*-]+/, "").replace(/\s+/g, " ").trim())
-    .filter((line) => line.length >= 28 && line.length <= 360)
-    .filter((line) => /[a-z]/i.test(line))
-    .filter((line) => {
-      const key = line.toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 20);
+  const candidates: { statement: string; category: string }[] = [];
+  let activeSection = "";
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine
+      .replace(/^[\s•●▪◦*-]+/, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!line || line.length > 360 || !/[a-z]/i.test(line)) continue;
+    const possibleSection = sectionCategory(line);
+    const looksLikeHeading =
+      line.length <= 42 &&
+      (possibleSection || line === line.toUpperCase() || /:$/.test(line));
+    if (looksLikeHeading) {
+      if (possibleSection) activeSection = possibleSection;
+      continue;
+    }
+    if (line.length < 10 || (line.length < 28 && !activeSection)) continue;
+    const key = line.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    candidates.push({
+      statement: line,
+      category: activeSection || categorizeStatement(line),
+    });
+    if (candidates.length >= 30) break;
+  }
+  return candidates;
+}
+
+function categorizeStatement(statement: string) {
+  const value = statement.toLowerCase();
+  if (/\b(award|honou?r(?:able)?|scholarship|distinction|dean'?s list|finalist|winner|medal|champion|gold|silver|bronze)\b/.test(value)) {
+    return "Award or distinction";
+  }
+  if (/\b(volunteer|community|service|nonprofit|outreach|tutor(?:ed|ing)?|fundrais)/.test(value)) {
+    return "Community contribution";
+  }
+  if (/\b(led|founded|president|captain|chair|coordinated|organized|managed|mentored|supervised)\b/.test(value)) {
+    return "Leadership";
+  }
+  if (/\b(research|laboratory|lab\b|genomics|bioinformatics|publication|poster|abstract|experiment)/.test(value)) {
+    return "Research experience";
+  }
+  if (/\b(project|built|developed|designed|created|implemented|engineered|prototype|application|platform)\b/.test(value)) {
+    return "Project or impact";
+  }
+  if (/\b(university|college|school|academy|degree|gpa|coursework|graduat(?:ed|ion))\b/.test(value)) {
+    return "Education";
+  }
+  if (/\b(intern|employment|worked|assistant|experience|role)\b/.test(value)) {
+    return "Professional experience";
+  }
+  return "Other résumé evidence";
 }
 
 export async function GET() {
@@ -108,10 +161,10 @@ export async function POST(request: NextRequest) {
     const db = await getDb();
     await db.insert(documents).values(document);
     const now = new Date();
-    const candidates = candidateStatements(extractedText).map((statement) => ({
+    const candidates = candidateStatements(extractedText).map(({ statement, category }) => ({
       id: id("claim"),
       userEmail: user.email,
-      category: "Imported résumé evidence",
+      category,
       statement,
       status: "draft" as const,
       evidence: JSON.stringify([{ documentId, filename: file.name }]),
