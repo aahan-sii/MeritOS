@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { and, eq, isNull } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { extensionTokens } from "@/db/schema";
@@ -8,7 +9,17 @@ export async function POST() {
   try {
     const user = await requireApiUser();
     const token = `merit_${randomBytes(24).toString("base64url")}`;
-    await (await getDb()).insert(extensionTokens).values({
+    const db = await getDb();
+    await db
+      .update(extensionTokens)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(extensionTokens.userEmail, user.email),
+          isNull(extensionTokens.revokedAt),
+        ),
+      );
+    await db.insert(extensionTokens).values({
       id: id("ext"),
       userEmail: user.email,
       tokenHash: createHash("sha256").update(token).digest("hex"),
