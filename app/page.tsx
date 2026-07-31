@@ -355,7 +355,10 @@ export default function Home() {
         themes: ["Imported résumé evidence"],
       }));
       setClaims((current) => [...imported, ...current]);
-      setImportMessage(`${imported.length} candidate facts extracted and securely stored.`);
+      const extractionMessage = data.extraction?.mode === "ai"
+        ? `${imported.length} grouped facts extracted from your document. Review each one before MeritOS can use it.`
+        : data.extraction?.warning || `${imported.length} candidate facts extracted and securely stored.`;
+      setImportMessage(extractionMessage);
       setImportStage("done");
     } catch (error) {
       setImportStage("error");

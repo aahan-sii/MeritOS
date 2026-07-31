@@ -7,7 +7,7 @@ import { extractText, getDocumentProxy } from "unpdf";
 import { recordAuditEvent } from "../_lib/audit";
 import { storePrivateDocument } from "../_lib/storage";
 import { ApiError, id, jsonError, requireApiUser } from "../_lib/request";
-import { extractResumeEvidence } from "@/lib/resume-intelligence";
+import { extractDocumentFacts } from "@/lib/document-facts";
 
 const MAX_DOCUMENT_BYTES = 12 * 1024 * 1024;
 const acceptedExtensions = new Set(["pdf", "docx", "txt"]);
@@ -141,13 +141,14 @@ export async function POST(request: NextRequest) {
     const documentId = id("doc");
     const storageKey = `${user.email}/${documentId}/${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const buffer = await file.arrayBuffer();
+    const extractedText = await extractDocumentText(
+      new File([buffer], file.name, { type: file.type }),
+    );
+    const extraction = await extractDocumentFacts(extractedText, file.name);
     const storedFile = await storePrivateDocument(
       storageKey,
       buffer,
       file.type || "application/octet-stream",
-    );
-    const extractedText = await extractDocumentText(
-      new File([buffer], file.name, { type: file.type }),
     );
 
     const document = {
@@ -164,16 +165,16 @@ export async function POST(request: NextRequest) {
     const db = await getDb();
     await db.insert(documents).values(document);
     const now = new Date();
-    const candidates = extractResumeEvidence(extractedText).map(({ statement, category }) => ({
+    const candidates = extraction.facts.map(({ statement, category, sourceQuote }) => ({
       id: id("claim"),
       userEmail: user.email,
       category,
       statement,
       status: "draft" as const,
-      evidence: JSON.stringify([{ documentId, filename: file.name }]),
+      evidence: JSON.stringify([{ documentId, filename: file.name, quote: sourceQuote }]),
       sensitivity: "standard" as const,
       allowedUses: "[]",
-      confidence: 70,
+      confidence: extraction.mode === "ai" ? 85 : 50,
       createdAt: now,
       updatedAt: now,
     }));
@@ -185,7 +186,10 @@ export async function POST(request: NextRequest) {
       action: "uploaded",
       detail: { filename: file.name, sizeBytes: file.size },
     });
-    return NextResponse.json({ document, candidateClaims: candidates }, { status: 201 });
+    return NextResponse.json(
+      { document, candidateClaims: candidates, extraction: { mode: extraction.mode, warning: extraction.warning } },
+      { status: 201 },
+    );
   } catch (error) {
     return jsonError(error);
   }
