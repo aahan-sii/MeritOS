@@ -95,6 +95,17 @@ async function structuredResponse<T>(
 
 const stringArray = { type: "array", items: { type: "string" } };
 
+export function cleanProfileText(value: string, maxLength = 6000) {
+  return value
+    .replace(/\[\s*claim_[a-z0-9-]+\s*\]/gi, " ")
+    .replace(/\bclaim_[a-z0-9-]+\b/gi, " ")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .trim()
+    .slice(0, maxLength);
+}
+
 export async function createFitAnalysis(input: {
   target: string;
   claims: VerifiedProfileClaim[];
@@ -185,13 +196,18 @@ Use only supplied verified claims. Never invent grades, impact, roles, motivatio
 The score measures profile completeness, evidence quality, and directional target alignment.
 If official criteria were not supplied, say that the result is directional. Strengths and story angles must cite valid claim IDs.
 Gaps may recommend evidence or experiences but cannot imply the applicant already has them.
-Opportunity searches are search strategies, not claims that a program is open. Keep advice specific and practical.`,
+Opportunity searches are search strategies, not claims that a program is open. Keep advice specific and practical.
+The positioning field is supporting copy, not a headline: write one plain-language sentence under 220 characters.
+Never include claim IDs or bracketed citations in any user-visible prose.`,
     `TARGET:\n${input.target}\n\nPROFILE COVERAGE: ${input.profileCoverage}%\n\nVERIFIED CLAIMS:\n${evidenceText(input.claims)}`,
   );
 
   const validIds = new Set(input.claims.map((claim) => claim.id));
   analysis.target = input.target;
   analysis.score = Math.max(0, Math.min(100, Math.round(analysis.score)));
+  analysis.positioning = cleanProfileText(analysis.positioning, 220);
+  analysis.summary = cleanProfileText(analysis.summary, 700);
+  analysis.confidence = cleanProfileText(analysis.confidence, 240);
   analysis.strengths = analysis.strengths.filter((item) => validIds.has(item.claimId));
   analysis.storyAngles = analysis.storyAngles.map((item) => ({
     ...item,
@@ -203,6 +219,8 @@ Opportunity searches are search strategies, not claims that a program is open. K
 export async function createStory(input: {
   target: string;
   lens: string;
+  focus?: string;
+  depth?: string;
   claims: VerifiedProfileClaim[];
 }): Promise<GeneratedStory> {
   const story = await structuredResponse<GeneratedStory>(
@@ -227,12 +245,19 @@ export async function createStory(input: {
     },
     `You are MeritOS Story Studio. Build a reusable Situation-Action-Result-Reflection story scaffold from verified evidence only.
 Never invent chronology, metrics, emotions, obstacles, results, or motivations. If evidence is absent, keep that section brief and ask a targeted question.
-Preserve concrete language. This is an editable scaffold, not a submission-ready essay. Every used fact must cite a valid claim ID.`,
-    `TARGET: ${input.target || "General future applications"}\nLENS: ${input.lens}\n\nVERIFIED CLAIMS:\n${evidenceText(input.claims)}`,
+Preserve concrete language. This is an editable scaffold, not a submission-ready essay.
+Claim IDs belong only in sourceClaimIds. Never include a claim ID, bracketed citation, or internal identifier in the title or story prose.`,
+    `TARGET: ${input.target || "General future applications"}\nLENS: ${input.lens}\nEXPERIENCE FOCUS: ${input.focus || "Best-supported experience"}\nDEPTH: ${input.depth || "Standard"}\n\nVERIFIED CLAIMS:\n${evidenceText(input.claims)}`,
   );
   const validIds = new Set(input.claims.map((claim) => claim.id));
   story.lens = input.lens;
   story.sourceClaimIds = story.sourceClaimIds.filter((claimId) => validIds.has(claimId));
+  story.title = cleanProfileText(story.title, 180);
+  story.situation = cleanProfileText(story.situation);
+  story.action = cleanProfileText(story.action);
+  story.result = cleanProfileText(story.result);
+  story.reflection = cleanProfileText(story.reflection);
+  story.missingQuestions = story.missingQuestions.map((question) => cleanProfileText(question, 500));
   return story;
 }
 

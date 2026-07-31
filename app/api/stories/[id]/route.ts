@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { stories } from "@/db/schema";
+import { cleanProfileText } from "@/lib/profile-intelligence";
 import { recordAuditEvent } from "../../_lib/audit";
 import { ApiError, asRecord, jsonError, requireApiUser } from "../../_lib/request";
 
@@ -15,7 +16,11 @@ export async function PATCH(
     const body = asRecord(await request.json(), "body");
     const update: Partial<typeof stories.$inferInsert> = { updatedAt: new Date() };
     for (const field of ["title", "lens", "situation", "action", "result", "reflection"] as const) {
-      if (typeof body[field] === "string") update[field] = body[field].trim().slice(0, 6000);
+      if (typeof body[field] === "string") {
+        update[field] = field === "lens"
+          ? body[field].trim().slice(0, 100)
+          : cleanProfileText(body[field], field === "title" ? 180 : 6000);
+      }
     }
     if (body.status === "draft" || body.status === "approved") update.status = body.status;
     const db = await getDb();
@@ -35,7 +40,15 @@ export async function PATCH(
     });
     const [story] = await db.select().from(stories).where(eq(stories.id, id)).limit(1);
     return NextResponse.json({
-      story: { ...story, sourceClaimIds: JSON.parse(story.sourceClaimIds) },
+      story: {
+        ...story,
+        title: cleanProfileText(story.title, 180),
+        situation: cleanProfileText(story.situation),
+        action: cleanProfileText(story.action),
+        result: cleanProfileText(story.result),
+        reflection: cleanProfileText(story.reflection),
+        sourceClaimIds: JSON.parse(story.sourceClaimIds),
+      },
     });
   } catch (error) {
     return jsonError(error);

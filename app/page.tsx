@@ -82,6 +82,15 @@ type InterviewFeedback = {
 
 const supportedDocumentExtensions = ["pdf", "docx", "txt"];
 const lenses = ["Leadership", "Research", "Community impact", "Resilience", "Academic curiosity", "Entrepreneurship"];
+const storyFocuses = [
+  "Best-supported experience",
+  "Research challenge",
+  "Leadership decision",
+  "Technical project",
+  "Community contribution",
+  "Failure and learning",
+];
+const storyDepths = ["Compact", "Standard", "Detailed"];
 const coverageAreas = [
   { name: "Education", pattern: /education|academic|school|coursework|degree|gpa/i },
   { name: "Experience", pattern: /experience|employment|intern|work|research/i },
@@ -176,6 +185,8 @@ export default function Home() {
   const [factStatement, setFactStatement] = useState("");
   const [factPrompt, setFactPrompt] = useState("");
   const [storyLens, setStoryLens] = useState(lenses[0]);
+  const [storyFocus, setStoryFocus] = useState(storyFocuses[0]);
+  const [storyDepth, setStoryDepth] = useState(storyDepths[1]);
   const [storyQuestions, setStoryQuestions] = useState<string[]>([]);
   const [activeQuestionId, setActiveQuestionId] = useState("");
   const [practiceAnswer, setPracticeAnswer] = useState("");
@@ -451,7 +462,12 @@ export default function Home() {
       const data = await readJson(await fetch("/api/stories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target: target || fit?.target, lens: storyLens }),
+        body: JSON.stringify({
+          target: target || fit?.target,
+          lens: storyLens,
+          focus: storyFocus,
+          depth: storyDepth,
+        }),
       }));
       setStories((current) => [data.story, ...current]);
       setStoryQuestions(data.missingQuestions || []);
@@ -558,6 +574,11 @@ export default function Home() {
       <main className="mos-landing">
         <nav className="mos-landing-nav">
           <Logo />
+          <div className="mos-landing-links">
+            <a href="#how-it-works">How it works</a>
+            <a href="#profile-intelligence">Profile intelligence</a>
+            <a href="/install">Chrome extension</a>
+          </div>
           <div>
             <SignInButton mode="modal"><button className="mos-button ghost">Sign in</button></SignInButton>
             <SignUpButton mode="modal"><button className="mos-button dark">Create account</button></SignUpButton>
@@ -588,11 +609,28 @@ export default function Home() {
             <img src="/meritos-mark-v2.png" alt="" />
           </div>
         </section>
-        <section className="mos-flow" aria-label="How MeritOS works">
+        <section className="mos-flow" id="how-it-works" aria-label="How MeritOS works">
           <article><b>01</b><strong>Build your profile</strong><p>Upload documents and add context a résumé cannot capture.</p></article>
           <article><b>02</b><strong>Verify every fact</strong><p>Control what is true, sensitive, or safe to reuse.</p></article>
           <article><b>03</b><strong>Strengthen your fit</strong><p>Choose a target and get specific evidence gaps and next actions.</p></article>
           <article><b>04</b><strong>Use it on real forms</strong><p>Approve answers in Chrome. MeritOS never presses submit.</p></article>
+        </section>
+        <section className="mos-landing-intelligence" id="profile-intelligence">
+          <div className="mos-landing-section-copy" data-reveal>
+            <span className="mos-kicker">Application context that improves over time</span>
+            <h2>A private source of truth, not another essay generator.</h2>
+            <p>
+              MeritOS separates verified evidence from generated language. Every suggestion can be traced
+              back to the profile facts you approved, while missing context stays visibly missing.
+            </p>
+            <a className="mos-button dark large" href="/install">See how the extension works</a>
+          </div>
+          <div className="mos-intelligence-stack" data-reveal>
+            <article><b>01</b><span><strong>Context coverage</strong><small>See what MeritOS knows—and what it still needs.</small></span></article>
+            <article><b>02</b><span><strong>Target scan</strong><small>Compare your verified profile with one specific direction.</small></span></article>
+            <article><b>03</b><span><strong>External form assistant</strong><small>Review grounded answers beside the real application.</small></span></article>
+            <img src="/meritos-mark-v2.png" alt="" />
+          </div>
         </section>
       </main>
     );
@@ -818,7 +856,13 @@ export default function Home() {
               <>
                 <section className="mos-fit-summary" data-reveal>
                   <ReadinessVisual value={fit.score} label={formatBand(fit.readinessBand)} />
-                  <div><span className="mos-kicker">Directional target readiness</span><h2>{fit.positioning}</h2><p>{fit.summary}</p><small>{fit.confidence}</small></div>
+                  <div className="mos-fit-copy">
+                    <span className="mos-kicker">Directional target readiness</span>
+                    <h2>{fit.target}</h2>
+                    <p className="mos-positioning">{fit.positioning}</p>
+                    <p>{fit.summary}</p>
+                    <small>{fit.confidence}</small>
+                  </div>
                 </section>
                 <section className="mos-grid two-one">
                   <article className="mos-card" data-reveal><span className="mos-kicker">Strongest evidence</span><h3>What already supports your case</h3><div className="mos-insight-list">{fit.strengths.map((strength) => <article key={`${strength.claimId}-${strength.title}`}><span>✓</span><div><strong>{strength.title}</strong><p>{strength.reason}</p></div></article>)}</div></article>
@@ -839,7 +883,14 @@ export default function Home() {
           <div className="mos-page">
             <section className="mos-page-intro" data-reveal>
               <div><span className="mos-kicker">Reusable truth, not canned essays</span><h2>Turn evidence into stories you can actually defend.</h2><p>Story Studio creates editable Situation–Action–Result–Reflection scaffolds from verified claims and flags what it still needs to ask you.</p></div>
-              <div className="mos-story-generator"><select value={storyLens} onChange={(event) => setStoryLens(event.target.value)}>{lenses.map((lens) => <option key={lens}>{lens}</option>)}</select><button className="mos-button dark" disabled={busy === "story"} onClick={generateStory}>{busy === "story" ? "Building…" : "Generate grounded story"}</button></div>
+              <div className="mos-story-generator">
+                <div className="mos-story-control-grid">
+                  <label><span>Narrative lens</span><select value={storyLens} onChange={(event) => setStoryLens(event.target.value)}>{lenses.map((lens) => <option key={lens}>{lens}</option>)}</select></label>
+                  <label><span>Experience focus</span><select value={storyFocus} onChange={(event) => setStoryFocus(event.target.value)}>{storyFocuses.map((focus) => <option key={focus}>{focus}</option>)}</select></label>
+                  <label><span>Scaffold depth</span><select value={storyDepth} onChange={(event) => setStoryDepth(event.target.value)}>{storyDepths.map((depth) => <option key={depth}>{depth}</option>)}</select></label>
+                </div>
+                <button className="mos-button dark" disabled={busy === "story"} onClick={generateStory}>{busy === "story" ? "Building…" : "Generate grounded story"}</button>
+              </div>
             </section>
             {storyQuestions.length > 0 && <section className="mos-question-callout" data-reveal><strong>This story needs your context</strong>{storyQuestions.map((question) => <button key={question} onClick={() => openFactForm("Story context", question)}>{question}<span>Add answer +</span></button>)}</section>}
             <section className="mos-story-list">
