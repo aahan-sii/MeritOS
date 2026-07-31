@@ -129,3 +129,52 @@ export const documents = pgTable(
   },
   (table) => [index("documents_user_created_idx").on(table.userEmail, table.createdAt)],
 );
+
+export const fitAnalyses = pgTable(
+  "fit_analyses",
+  {
+    id: text("id").primaryKey(),
+    userEmail: text("user_email").notNull(),
+    target: text("target").notNull(),
+    score: integer("score").notNull(),
+    readinessBand: text("readiness_band", {
+      enum: ["not_ready", "developing", "plausible", "competitive", "standout"],
+    }).notNull(),
+    analysis: text("analysis").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("fit_analyses_user_updated_idx").on(table.userEmail, table.updatedAt)],
+);
+
+export const stories = pgTable(
+  "stories",
+  {
+    id: text("id").primaryKey(),
+    userEmail: text("user_email").notNull(),
+    title: text("title").notNull(),
+    lens: text("lens").notNull(),
+    situation: text("situation").notNull().default(""),
+    action: text("action").notNull().default(""),
+    result: text("result").notNull().default(""),
+    reflection: text("reflection").notNull().default(""),
+    sourceClaimIds: text("source_claim_ids").notNull().default("[]"),
+    status: text("status", { enum: ["draft", "approved"] }).notNull().default("draft"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("stories_user_updated_idx").on(table.userEmail, table.updatedAt)],
+);
+
+export const interviewSessions = pgTable(
+  "interview_sessions",
+  {
+    id: text("id").primaryKey(),
+    userEmail: text("user_email").notNull(),
+    target: text("target").notNull(),
+    questions: text("questions").notNull().default("[]"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("interview_sessions_user_updated_idx").on(table.userEmail, table.updatedAt)],
+);

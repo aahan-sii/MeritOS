@@ -1,165 +1,132 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
 import { DragEvent, useEffect, useMemo, useState } from "react";
 import { SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
 
-type View =
-  | "overview"
-  | "lifegraph"
-  | "applications"
-  | "review"
-  | "stories";
-
-type ClaimStatus = "verified" | "draft" | "restricted";
-
-type Claim = {
-  id: string | number;
-  title: string;
-  detail: string;
-  source: string;
-  evidence: number;
-  status: ClaimStatus;
-  themes: string[];
-};
-
+type View = "overview" | "profile" | "review" | "fit" | "stories" | "interview" | "extension";
+type ClaimStatus = "verified" | "draft" | "inference" | "restricted" | "missing";
 type ImportStage = "idle" | "selected" | "uploading" | "done" | "error";
 
+type Profile = {
+  displayName: string;
+  headline: string;
+  onboardingComplete: boolean;
+};
+
+type Claim = {
+  id: string;
+  category: string;
+  statement: string;
+  status: ClaimStatus;
+  evidence: string;
+  sensitivity: "standard" | "sensitive";
+  confidence: number;
+};
+
+type FitAnalysis = {
+  id: string;
+  target: string;
+  score: number;
+  readinessBand: "not_ready" | "developing" | "plausible" | "competitive" | "standout";
+  summary: string;
+  positioning: string;
+  confidence: string;
+  strengths: Array<{ claimId: string; title: string; reason: string }>;
+  gaps: Array<{
+    area: string;
+    whyItMatters: string;
+    action: string;
+    priority: "high" | "medium" | "low";
+  }>;
+  missingContextQuestions: string[];
+  storyAngles: Array<{ title: string; claimIds: string[]; angle: string }>;
+  opportunitySearches: Array<{ label: string; query: string; why: string }>;
+};
+
+type Story = {
+  id: string;
+  title: string;
+  lens: string;
+  situation: string;
+  action: string;
+  result: string;
+  reflection: string;
+  sourceClaimIds: string[];
+  status: "draft" | "approved";
+};
+
+type InterviewQuestion = {
+  id: string;
+  type: "fit" | "behavioral" | "technical" | "evidence" | "challenge";
+  question: string;
+  whyItIsAsked: string;
+  sourceClaimIds: string[];
+  strongAnswerNeeds: string[];
+};
+
+type InterviewSession = {
+  id: string;
+  target: string;
+  questions: InterviewQuestion[];
+};
+
+type InterviewFeedback = {
+  summary: string;
+  strengths: string[];
+  risks: string[];
+  improvedOutline: string[];
+  evidenceUsed: string[];
+  followUpQuestion: string;
+};
+
 const supportedDocumentExtensions = ["pdf", "docx", "txt"];
-
-function formatFileSize(bytes: number) {
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-const initialClaims: Claim[] = [
-  {
-    id: 1,
-    title: "Led a five-person assistive-technology research team",
-    detail:
-      "Designed the study workflow, coordinated weekly experiments, and presented findings to faculty reviewers.",
-    source: "CV · Research report · Supervisor note",
-    evidence: 3,
-    status: "verified",
-    themes: ["Research", "Leadership"],
-  },
-  {
-    id: 2,
-    title: "Reduced document-processing time by 32%",
-    detail:
-      "Built a structured intake process and automation prototype during a summer research placement.",
-    source: "Project report · Portfolio",
-    evidence: 2,
-    status: "verified",
-    themes: ["Impact", "Technical"],
-  },
-  {
-    id: 3,
-    title: "Mentored first-generation students in STEM",
-    detail:
-      "Ran weekly problem-solving sessions and created a peer-resource library used by 60+ students.",
-    source: "CV · Program coordinator email",
-    evidence: 2,
-    status: "verified",
-    themes: ["Community", "Mentorship"],
-  },
-  {
-    id: 4,
-    title: "Overcame a significant financial interruption",
-    detail:
-      "Personal context available only for applications where you explicitly approve its use.",
-    source: "Personal interview",
-    evidence: 1,
-    status: "restricted",
-    themes: ["Resilience"],
-  },
+const lenses = ["Leadership", "Research", "Community impact", "Resilience", "Academic curiosity", "Entrepreneurship"];
+const coverageAreas = [
+  { name: "Education", pattern: /education|academic|school|coursework|degree|gpa/i },
+  { name: "Experience", pattern: /experience|employment|intern|work|research/i },
+  { name: "Projects & impact", pattern: /project|impact|portfolio|built|developed/i },
+  { name: "Leadership", pattern: /leadership|led|founded|president|captain|mentor/i },
+  { name: "Awards", pattern: /award|distinction|honou?r|recognition|achievement/i },
+  { name: "Community", pattern: /community|service|volunteer|outreach/i },
+  { name: "Skills", pattern: /skill|technical|language|tool|certif/i },
+  { name: "Motivation & goals", pattern: /motivation|goal|interest|why|aspiration/i },
 ];
 
-const navItems: { id: View; label: string; glyph: string }[] = [
-  { id: "overview", label: "Your progress", glyph: "⌂" },
-  { id: "lifegraph", label: "1. Build your profile", glyph: "◫" },
-  { id: "applications", label: "2. Complete application", glyph: "▤" },
-  { id: "review", label: "3. Review before submitting", glyph: "◎" },
-  { id: "stories", label: "Stories and essays", glyph: "✦" },
+const navigation: Array<{ id: View; label: string; index: string }> = [
+  { id: "overview", label: "Home", index: "00" },
+  { id: "profile", label: "Build profile", index: "01" },
+  { id: "review", label: "Review profile", index: "02" },
+  { id: "fit", label: "Target & opportunities", index: "03" },
+  { id: "stories", label: "Story bank", index: "04" },
+  { id: "interview", label: "Interview practice", index: "05" },
+  { id: "extension", label: "Chrome extension", index: "06" },
 ];
 
-const applications = [
-  {
-    id: "rhodes",
-    name: "Rhodes Scholarship",
-    organization: "University nomination",
-    deadline: "Aug 14",
-    progress: 78,
-    status: "Review ready",
-    tone: "blue",
-    tasks: 3,
-  },
-  {
-    id: "fulbright",
-    name: "Fulbright Open Study",
-    organization: "Research award",
-    deadline: "Oct 7",
-    progress: 54,
-    status: "Building evidence",
-    tone: "gold",
-    tasks: 6,
-  },
-  {
-    id: "stanford",
-    name: "Stanford MS · HCI",
-    organization: "Graduate program",
-    deadline: "Dec 2",
-    progress: 32,
-    status: "Preflight complete",
-    tone: "green",
-    tasks: 8,
-  },
-];
-
-const reviewerRows = [
-  {
-    name: "Eligibility officer",
-    score: 96,
-    note: "All non-negotiable requirements appear satisfied.",
-    tone: "green",
-  },
-  {
-    name: "Domain expert",
-    score: 82,
-    note: "Strong preparation; clarify your individual research contribution.",
-    tone: "blue",
-  },
-  {
-    name: "Evidence reviewer",
-    score: 76,
-    note: "Two impact claims need stronger corroboration.",
-    tone: "gold",
-  },
-  {
-    name: "Narrative reviewer",
-    score: 87,
-    note: "Coherent public-service arc with one repeated example.",
-    tone: "violet",
-  },
-];
-
-function StatusPill({
-  children,
-  tone = "neutral",
-}: {
-  children: React.ReactNode;
-  tone?: string;
-}) {
-  return <span className={`status-pill ${tone}`}>{children}</span>;
-}
-
-function ProgressRing({ value, label }: { value: number; label: string }) {
+function Logo({ compact = false }: { compact?: boolean }) {
   return (
-    <div
-      className="progress-ring"
-      style={{ "--progress": `${value * 3.6}deg` } as React.CSSProperties}
-      aria-label={`${label}: ${value}%`}
-    >
-      <div className="ring-inner">
+    <div className={compact ? "mos-logo compact" : "mos-logo"}>
+      <img src="/meritos-mark-v2.png" alt="" />
+      {!compact && (
+        <span>
+          <strong>MeritOS</strong>
+          <small>Application intelligence</small>
+        </span>
+      )}
+    </div>
+  );
+}
+
+function ReadinessVisual({ value, label }: { value: number; label: string }) {
+  return (
+    <div className="mos-readiness-scene" aria-label={`${label}: ${value}%`}>
+      <div className="mos-readiness-plane plane-one" />
+      <div className="mos-readiness-plane plane-two" />
+      <div className="mos-orbit orbit-one" />
+      <div className="mos-orbit orbit-two" />
+      <img className="mos-orbit-mark mark-shadow" src="/meritos-mark-v2.png" alt="" />
+      <img className="mos-orbit-mark" src="/meritos-mark-v2.png" alt="" />
+      <div className="mos-readiness-number">
         <strong>{value}%</strong>
         <span>{label}</span>
       </div>
@@ -167,148 +134,171 @@ function ProgressRing({ value, label }: { value: number; label: string }) {
   );
 }
 
-function Logo() {
-  return (
-    <div className="brand">
-      <img className="brand-mark" src="/meritos-mark.svg" alt="" />
-      <div>
-        <strong>MeritOS</strong>
-        <span>Application intelligence</span>
-      </div>
-    </div>
-  );
+function ErrorMessage({ message }: { message: string }) {
+  return message ? <p className="mos-error" role="alert">{message}</p> : null;
+}
+
+function formatBand(value?: FitAnalysis["readinessBand"]) {
+  if (!value) return "Profile coverage";
+  return value.replaceAll("_", " ");
+}
+
+function evidenceSource(evidence: string) {
+  try {
+    const parsed = JSON.parse(evidence);
+    return parsed[0]?.filename || parsed[0]?.source || "Added directly";
+  } catch {
+    return "MeritOS profile";
+  }
 }
 
 export default function Home() {
   const { isLoaded, isSignedIn, user } = useUser();
   const [view, setView] = useState<View>("overview");
-  const [claims, setClaims] = useState(initialClaims);
-  const [selectedApplication, setSelectedApplication] = useState("rhodes");
+  const [accountLoading, setAccountLoading] = useState(true);
+  const [profile, setProfile] = useState<Profile>({ displayName: "", headline: "", onboardingComplete: false });
+  const [claims, setClaims] = useState<Claim[]>([]);
+  const [fit, setFit] = useState<FitAnalysis | null>(null);
+  const [stories, setStories] = useState<Story[]>([]);
+  const [interview, setInterview] = useState<InterviewSession | null>(null);
+  const [target, setTarget] = useState("");
+  const [toast, setToast] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState("");
+  const [claimFilter, setClaimFilter] = useState<"all" | "verified" | "review">("all");
+  const [claimQuery, setClaimQuery] = useState("");
   const [showImport, setShowImport] = useState(false);
   const [importStage, setImportStage] = useState<ImportStage>("idle");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [importMessage, setImportMessage] = useState("");
-  const [reviewRunning, setReviewRunning] = useState(false);
-  const [reviewComplete, setReviewComplete] = useState(true);
-  const [reviewedVerifiedCount, setReviewedVerifiedCount] = useState(3);
-  const [approvedFields, setApprovedFields] = useState<string[]>(["name"]);
-  const [showOverlay, setShowOverlay] = useState(false);
-  const [overlayApplied, setOverlayApplied] = useState(false);
-  const [lens, setLens] = useState("Public service");
-  const [toast, setToast] = useState("");
-  const [query, setQuery] = useState("");
-  const [showSearch, setShowSearch] = useState(false);
-  const [claimFilter, setClaimFilter] = useState<"all" | "verified" | "review">("all");
-  const [tasksAdded, setTasksAdded] = useState(0);
-  const [accountLoading, setAccountLoading] = useState(true);
-  const [onboardingComplete, setOnboardingComplete] = useState(false);
-  const [profileName, setProfileName] = useState("");
-  const [headline, setHeadline] = useState("");
+  const [showFactForm, setShowFactForm] = useState(false);
+  const [factCategory, setFactCategory] = useState("Motivation & goals");
+  const [factStatement, setFactStatement] = useState("");
+  const [factPrompt, setFactPrompt] = useState("");
+  const [storyLens, setStoryLens] = useState(lenses[0]);
+  const [storyQuestions, setStoryQuestions] = useState<string[]>([]);
+  const [activeQuestionId, setActiveQuestionId] = useState("");
+  const [practiceAnswer, setPracticeAnswer] = useState("");
+  const [feedback, setFeedback] = useState<InterviewFeedback | null>(null);
   const [extensionToken, setExtensionToken] = useState("");
 
-  const selectedApp =
-    applications.find((app) => app.id === selectedApplication) ??
-    applications[0];
-
-  const verifiedCount = useMemo(
-    () => claims.filter((claim) => claim.status === "verified").length,
+  const verifiedClaims = useMemo(
+    () => claims.filter((claim) => claim.status === "verified"),
     [claims],
   );
+  const reviewClaims = useMemo(
+    () => claims.filter((claim) => claim.status !== "verified"),
+    [claims],
+  );
+  const coveredAreas = useMemo(
+    () => coverageAreas.filter((area) =>
+      verifiedClaims.some((claim) => area.pattern.test(`${claim.category} ${claim.statement}`)),
+    ),
+    [verifiedClaims],
+  );
+  const profileCoverage = Math.round(
+    ((coveredAreas.length + (profile.displayName.trim() ? 0.5 : 0) + (profile.headline.trim() ? 0.5 : 0)) /
+      (coverageAreas.length + 1)) * 100,
+  );
+  const readinessValue = fit?.score ?? profileCoverage;
+  const activeQuestion = interview?.questions.find((question) => question.id === activeQuestionId)
+    ?? interview?.questions[0]
+    ?? null;
 
-  const reviewEvidenceGain = Math.max(0, reviewedVerifiedCount - 3);
-  const evidenceChangesSinceReview = verifiedCount - reviewedVerifiedCount;
-  const reviewRows = reviewerRows.map((reviewer, index) => ({
-    ...reviewer,
-    score: Math.min(99, reviewer.score + reviewEvidenceGain * (index === 2 ? 7 : 3)),
-  }));
-
-  useEffect(() => {
-    const items = Array.from(
-      document.querySelectorAll<HTMLElement>(
-        ".hero-card, .guided-path, .next-step-banner, .section-card, .metrics-strip, .application-header-card, .review-hero, .story-intro, .committee-grid",
-      ),
-    );
-    const reduceMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-
-    if (reduceMotion || !("IntersectionObserver" in window)) {
-      items.forEach((item) => item.classList.add("scroll-reveal-visible"));
-      return;
-    }
-
-    items.forEach((item, index) => {
-      item.classList.add("scroll-reveal");
-      item.style.setProperty("--reveal-delay", `${Math.min(index % 4, 3) * 45}ms`);
-    });
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (!entry.isIntersecting) return;
-          entry.target.classList.add("scroll-reveal-visible");
-          observer.unobserve(entry.target);
-        });
-      },
-      { threshold: 0.08, rootMargin: "0px 0px -28px 0px" },
-    );
-
-    items.forEach((item) => observer.observe(item));
-    return () => observer.disconnect();
-  }, [view, claims.length, reviewComplete]);
+  const filteredClaims = claims.filter((claim) => {
+    const statusMatch =
+      claimFilter === "all"
+      || (claimFilter === "verified" && claim.status === "verified")
+      || (claimFilter === "review" && claim.status !== "verified");
+    return statusMatch && `${claim.category} ${claim.statement}`.toLowerCase().includes(claimQuery.toLowerCase());
+  });
 
   useEffect(() => {
     if (!isSignedIn) return;
     let cancelled = false;
-    Promise.all([fetch("/api/profile"), fetch("/api/claims")])
-      .then(async ([profileResponse, claimsResponse]) => {
-        if (!profileResponse.ok || !claimsResponse.ok) throw new Error();
-        const profileData = await profileResponse.json();
-        const claimsData = await claimsResponse.json();
+    Promise.all([
+      fetch("/api/profile"),
+      fetch("/api/claims"),
+      fetch("/api/fit-analysis"),
+      fetch("/api/stories"),
+      fetch("/api/interview"),
+    ])
+      .then(async (responses) => {
+        if (responses.some((response) => !response.ok)) throw new Error("Your workspace could not be loaded.");
+        const [profileData, claimsData, fitData, storiesData, interviewData] =
+          await Promise.all(responses.map((response) => response.json()));
         if (cancelled) return;
-        setProfileName(profileData.profile.displayName || user?.fullName || "");
-        setHeadline(profileData.profile.headline || "");
-        setOnboardingComplete(profileData.profile.onboardingComplete === true);
-        setClaims(
-          claimsData.claims.map((claim: Record<string, unknown>) => ({
-            id: String(claim.id),
-            title: String(claim.statement),
-            detail: `Imported evidence · ${claim.confidence}% extraction confidence`,
-            source: (() => {
-              try {
-                return JSON.parse(String(claim.evidence))[0]?.filename || "MeritOS profile";
-              } catch {
-                return "MeritOS profile";
-              }
-            })(),
-            evidence: 1,
-            status:
-              claim.status === "verified"
-                ? "verified"
-                : claim.status === "restricted"
-                  ? "restricted"
-                  : "draft",
-            themes: [String(claim.category)],
-          })),
-        );
+        const nextProfile = {
+          displayName: profileData.profile.displayName || user?.fullName || "",
+          headline: profileData.profile.headline || "",
+          onboardingComplete: profileData.profile.onboardingComplete === true,
+        };
+        setProfile(nextProfile);
+        setClaims(claimsData.claims);
+        setFit(fitData.analysis);
+        setStories(storiesData.stories);
+        setInterview(interviewData.session);
+        setTarget(fitData.analysis?.target || interviewData.session?.target || "");
+        setActiveQuestionId(interviewData.session?.questions?.[0]?.id || "");
       })
-      .catch(() => setClaims([]))
+      .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Your workspace could not be loaded."))
       .finally(() => !cancelled && setAccountLoading(false));
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [isSignedIn, user?.fullName]);
+
+  useEffect(() => {
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const elements = Array.from(document.querySelectorAll<HTMLElement>("[data-reveal]"));
+    if (reduceMotion || !("IntersectionObserver" in window)) {
+      elements.forEach((element) => element.classList.add("is-visible"));
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("is-visible");
+          observer.unobserve(entry.target);
+        }
+      }),
+      { threshold: 0.08, rootMargin: "0px 0px -24px" },
+    );
+    elements.forEach((element) => observer.observe(element));
+    return () => observer.disconnect();
+  }, [view, claims.length, fit?.id, stories.length]);
 
   function announce(message: string) {
     setToast(message);
-    window.setTimeout(() => setToast(""), 2600);
+    window.setTimeout(() => setToast(""), 2800);
   }
 
-  function goTo(nextView: View) {
-    setView(nextView);
-    window.requestAnimationFrame(() =>
-      window.scrollTo({ top: 0, behavior: "smooth" }),
-    );
+  function goTo(next: View) {
+    setView(next);
+    setError("");
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+  }
+
+  async function readJson(response: Response) {
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Something went wrong.");
+    return data;
+  }
+
+  async function finishOnboarding() {
+    setBusy("onboarding");
+    setError("");
+    try {
+      const data = await readJson(await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...profile, onboardingComplete: true }),
+      }));
+      setProfile(data.profile);
+      announce("Your verified profile is ready.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Setup could not be saved.");
+    } finally {
+      setBusy("");
+    }
   }
 
   function chooseFile(file: File | undefined) {
@@ -316,17 +306,17 @@ export default function Home() {
     const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
     if (!supportedDocumentExtensions.includes(extension)) {
       setImportStage("error");
-      setImportMessage("Use a PDF, DOC, DOCX, or TXT document.");
+      setImportMessage("Use a PDF, DOCX, or TXT file.");
       return;
     }
     if (file.size > 12 * 1024 * 1024) {
       setImportStage("error");
-      setImportMessage("This file is over the 12 MB import limit.");
+      setImportMessage("This file is over the 12 MB limit.");
       return;
     }
     setSelectedFile(file);
-    setImportMessage("");
     setImportStage("selected");
+    setImportMessage("");
   }
 
   function handleDrop(event: DragEvent<HTMLLabelElement>) {
@@ -334,33 +324,23 @@ export default function Home() {
     chooseFile(event.dataTransfer.files[0]);
   }
 
-  async function runImport() {
+  async function importDocument() {
     if (!selectedFile) return;
     setImportStage("uploading");
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
-      const response = await fetch("/api/documents", { method: "POST", body: formData });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Upload failed.");
-      const imported: Claim[] = data.candidateClaims.map((claim: Record<string, unknown>) => ({
-        id: String(claim.id),
-        title: String(claim.statement),
-        detail: "Extracted from your document. Verify it before MeritOS can use it.",
-        source: selectedFile.name,
-        evidence: 1,
-        status: "draft",
-        themes: ["Imported résumé evidence"],
-      }));
-      setClaims((current) => [...imported, ...current]);
-      const extractionMessage = data.extraction?.mode === "ai"
-        ? `${imported.length} grouped facts extracted from your document. Review each one before MeritOS can use it.`
-        : data.extraction?.warning || `${imported.length} candidate facts extracted and securely stored.`;
-      setImportMessage(extractionMessage);
+      const data = await readJson(await fetch("/api/documents", { method: "POST", body: formData }));
+      setClaims((current) => [...data.candidateClaims, ...current]);
+      setImportMessage(
+        data.extraction?.mode === "ai"
+          ? `${data.candidateClaims.length} grouped facts extracted. Review them before MeritOS uses them.`
+          : data.extraction?.warning || `${data.candidateClaims.length} candidate facts extracted.`,
+      );
       setImportStage("done");
-    } catch (error) {
+    } catch (requestError) {
       setImportStage("error");
-      setImportMessage(error instanceof Error ? error.message : "Upload failed.");
+      setImportMessage(requestError instanceof Error ? requestError.message : "Upload failed.");
     }
   }
 
@@ -371,1228 +351,593 @@ export default function Home() {
     setImportMessage("");
   }
 
-  function closeSearch() {
-    setShowSearch(false);
-    setQuery("");
-  }
-
-  async function toggleClaimStatus(id: string | number) {
-    const existing = claims.find((claim) => claim.id === id);
-    if (!existing) return;
-    const status = existing.status === "verified" ? "draft" : "verified";
-    if (typeof id === "string" && id.startsWith("claim_")) {
-      const response = await fetch(`/api/claims/${id}`, {
+  async function changeClaimStatus(claim: Claim, status: ClaimStatus) {
+    setBusy(`claim-${claim.id}`);
+    try {
+      const data = await readJson(await fetch(`/api/claims/${claim.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
-      });
-      if (!response.ok) {
-        announce("That verification change was not saved.");
-        return;
-      }
+      }));
+      setClaims((current) => current.map((item) => item.id === claim.id ? data.claim : item));
+      announce(status === "verified" ? "Fact verified and available to MeritOS." : "Fact moved out of automatic use.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "The fact could not be updated.");
+    } finally {
+      setBusy("");
     }
-    setClaims((current) =>
-      current.map((claim) =>
-        claim.id === id
-          ? { ...claim, status }
-          : claim,
-      ),
-    );
   }
 
-  function runReview() {
-    setReviewRunning(true);
-    setReviewComplete(false);
-    window.setTimeout(() => {
-      setReviewRunning(false);
-      setReviewComplete(true);
-      setReviewedVerifiedCount(verifiedCount);
-      announce(
-        verifiedCount > 3
-          ? "Review refreshed. Newly verified evidence strengthened the evidence read."
-          : "Committee review refreshed with current evidence.",
-      );
-    }, 1300);
-  }
-
-  function approveField(id: string) {
-    setApprovedFields((current) =>
-      current.includes(id)
-        ? current.filter((field) => field !== id)
-        : [...current, id],
-    );
-  }
-
-  function applyOverlaySuggestions() {
-    setApprovedFields(["name", "leadership"]);
-    setOverlayApplied(true);
-    announce("Approved suggestions applied to the preview. No form was submitted.");
-  }
-
-  const filteredClaims = claims.filter((claim) => {
-    const matchesFilter =
-      claimFilter === "all" ||
-      (claimFilter === "verified" && claim.status === "verified") ||
-      (claimFilter === "review" && claim.status !== "verified");
-    const matchesQuery = `${claim.title} ${claim.detail} ${claim.themes.join(" ")}`
-      .toLowerCase()
-      .includes(query.toLowerCase());
-    return matchesFilter && matchesQuery;
-  });
-
-  async function finishOnboarding() {
-    const response = await fetch("/api/profile", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        displayName: profileName,
-        headline,
-        onboardingComplete: true,
-      }),
-    });
-    if (!response.ok) {
-      announce("Your setup could not be saved.");
-      return;
+  async function deleteClaim(claim: Claim) {
+    setBusy(`claim-${claim.id}`);
+    try {
+      const response = await fetch(`/api/claims/${claim.id}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("The fact could not be deleted.");
+      setClaims((current) => current.filter((item) => item.id !== claim.id));
+      announce("Fact deleted from your profile.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "The fact could not be deleted.");
+    } finally {
+      setBusy("");
     }
-    setOnboardingComplete(true);
+  }
+
+  function openFactForm(category = "Motivation & goals", prompt = "") {
+    setFactCategory(category);
+    setFactPrompt(prompt);
+    setFactStatement("");
+    setShowFactForm(true);
+  }
+
+  async function saveFact() {
+    if (!factStatement.trim()) return;
+    setBusy("fact");
+    try {
+      const data = await readJson(await fetch("/api/claims", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: factCategory,
+          statement: factStatement,
+          status: "verified",
+          confidence: 100,
+          evidence: [{ source: "Applicant-confirmed profile context" }],
+          allowedUses: ["application_assistance", "fit_analysis", "interview_practice"],
+        }),
+      }));
+      setClaims((current) => [data.claim, ...current]);
+      setShowFactForm(false);
+      announce("Context added to your verified profile.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "The fact could not be saved.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function runFitAnalysis() {
+    if (!target.trim()) return;
+    setBusy("fit");
+    setError("");
+    try {
+      const data = await readJson(await fetch("/api/fit-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target, profileCoverage }),
+      }));
+      setFit(data.analysis);
+      announce("Target analysis rebuilt from your current verified profile.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Target analysis failed.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function generateStory() {
+    setBusy("story");
+    setStoryQuestions([]);
+    setError("");
+    try {
+      const data = await readJson(await fetch("/api/stories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target: target || fit?.target, lens: storyLens }),
+      }));
+      setStories((current) => [data.story, ...current]);
+      setStoryQuestions(data.missingQuestions || []);
+      announce("A grounded story scaffold was added to your bank.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Story generation failed.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function saveStory(story: Story, status = story.status) {
+    setBusy(`story-${story.id}`);
+    try {
+      const data = await readJson(await fetch(`/api/stories/${story.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...story, status }),
+      }));
+      setStories((current) => current.map((item) => item.id === story.id ? data.story : item));
+      announce(status === "approved" ? "Story approved for reuse." : "Story changes saved.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Story could not be saved.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function updateStory(id: string, field: keyof Story, value: string) {
+    setStories((current) => current.map((story) => story.id === id ? { ...story, [field]: value } : story));
+  }
+
+  async function generateInterview() {
+    if (!target.trim()) return;
+    setBusy("interview");
+    setFeedback(null);
+    setError("");
+    try {
+      const data = await readJson(await fetch("/api/interview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "generate", target }),
+      }));
+      setInterview(data.session);
+      setActiveQuestionId(data.session.questions[0]?.id || "");
+      setPracticeAnswer("");
+      announce("Your target-specific interview set is ready.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Interview set could not be generated.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function evaluateAnswer() {
+    if (!activeQuestion || !practiceAnswer.trim()) return;
+    setBusy("feedback");
+    setError("");
+    try {
+      const data = await readJson(await fetch("/api/interview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "evaluate",
+          target: interview?.target || target,
+          question: activeQuestion.question,
+          answer: practiceAnswer,
+        }),
+      }));
+      setFeedback(data.feedback);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Answer feedback failed.");
+    } finally {
+      setBusy("");
+    }
   }
 
   async function createExtensionConnection() {
-    const response = await fetch("/api/extension/connect", { method: "POST" });
-    const data = await response.json();
-    if (!response.ok) {
-      announce(data.error || "Could not create an extension connection.");
-      return;
+    setBusy("extension");
+    try {
+      const data = await readJson(await fetch("/api/extension/connect", { method: "POST" }));
+      setExtensionToken(data.token);
+      await navigator.clipboard?.writeText(data.token);
+      announce("New connection key copied.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Connection key could not be created.");
+    } finally {
+      setBusy("");
     }
-    setExtensionToken(data.token);
-    await navigator.clipboard?.writeText(data.token);
-    announce("Connection key copied. Paste it into the MeritOS Chrome side panel.");
   }
 
   if (!isLoaded || (isSignedIn && accountLoading)) {
-    return <main className="account-screen"><Logo /><div className="account-loader">Loading your secure workspace…</div></main>;
+    return (
+      <main className="mos-loading">
+        <Logo />
+        <div className="mos-loader-line"><span /></div>
+        <p>Opening your private profile…</p>
+      </main>
+    );
   }
 
   if (!isSignedIn) {
     return (
-      <main className="account-screen landing-screen">
-        <nav className="landing-nav"><Logo /><div><SignInButton mode="modal"><button className="text-button">Sign in</button></SignInButton><SignUpButton mode="modal"><button className="primary-button">Create account</button></SignUpButton></div></nav>
-        <section className="landing-hero">
-          <span className="eyebrow">Your verified application profile</span>
-          <h1>Upload your experience once.<br />Use it wherever you apply.</h1>
-          <p>MeritOS turns your résumé into facts you control, then its Chrome side panel helps answer grant, scholarship, graduate, and job application forms.</p>
-          <div className="landing-actions"><SignUpButton mode="modal"><button className="primary-button large">Create your MeritOS profile</button></SignUpButton><a className="secondary-button large" href="/install">Get the Chrome extension</a></div>
-          <div className="product-flow"><span>1 · Import résumé</span><span>2 · Verify facts</span><span>3 · Open any application</span><span>4 · Approve and fill</span></div>
+      <main className="mos-landing">
+        <nav className="mos-landing-nav">
+          <Logo />
+          <div>
+            <SignInButton mode="modal"><button className="mos-button ghost">Sign in</button></SignInButton>
+            <SignUpButton mode="modal"><button className="mos-button dark">Create account</button></SignUpButton>
+          </div>
+        </nav>
+        <section className="mos-landing-hero">
+          <div className="mos-landing-copy" data-reveal>
+            <span className="mos-kicker">One profile. Every application form.</span>
+            <h1>Your real experience,<br /><em>ready wherever you apply.</em></h1>
+            <p>
+              MeritOS turns your résumé and personal context into verified facts, helps you strengthen
+              your fit, then fills legitimate application forms through a Chrome side panel you control.
+            </p>
+            <div className="mos-action-row">
+              <SignUpButton mode="modal"><button className="mos-button dark large">Build my profile</button></SignUpButton>
+              <a className="mos-button light large" href="/install">Get the extension</a>
+            </div>
+            <div className="mos-trust-row">
+              <span>Evidence linked</span><span>User approved</span><span>Never auto-submitted</span>
+            </div>
+          </div>
+          <div className="mos-landing-visual" data-reveal>
+            <div className="mos-profile-stack">
+              <article><small>VERIFIED PROFILE</small><strong>Research experience</strong><span>Résumé · approved by you</span></article>
+              <article><small>LIVE FORM</small><strong>Suggested answer</strong><span>2 supporting facts · review first</span></article>
+              <article><small>TARGET FIT</small><strong>Evidence gap found</strong><span>Add outcome + motivation</span></article>
+            </div>
+            <img src="/meritos-mark-v2.png" alt="" />
+          </div>
+        </section>
+        <section className="mos-flow" aria-label="How MeritOS works">
+          <article><b>01</b><strong>Build your profile</strong><p>Upload documents and add context a résumé cannot capture.</p></article>
+          <article><b>02</b><strong>Verify every fact</strong><p>Control what is true, sensitive, or safe to reuse.</p></article>
+          <article><b>03</b><strong>Strengthen your fit</strong><p>Choose a target and get specific evidence gaps and next actions.</p></article>
+          <article><b>04</b><strong>Use it on real forms</strong><p>Approve answers in Chrome. MeritOS never presses submit.</p></article>
         </section>
       </main>
     );
   }
 
-  if (!onboardingComplete) {
+  if (!profile.onboardingComplete) {
     return (
-      <main className="account-screen onboarding-screen">
-        <nav className="landing-nav"><Logo /><UserButton /></nav>
-        <section className="onboarding-card">
-          <div className="onboarding-progress"><span className="active">Account</span><span className="active">Profile</span><span>Extension</span></div>
-          <span className="eyebrow">One-time setup</span>
-          <h1>Build the profile MeritOS can use</h1>
-          <p>This setup disappears when you finish. Your documents and verified facts stay in your account.</p>
-          <div className="onboarding-fields">
-            <label>Your name<input value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder="Your full name" /></label>
-            <label>One-line focus<input value={headline} onChange={(event) => setHeadline(event.target.value)} placeholder="e.g. Computer science student focused on accessible technology" /></label>
+      <main className="mos-onboarding">
+        <nav className="mos-landing-nav"><Logo /><UserButton /></nav>
+        <section className="mos-onboarding-card">
+          <div className="mos-onboarding-steps"><span className="active">Account</span><span className="active">Profile</span><span>Workspace</span></div>
+          <span className="mos-kicker">One-time setup</span>
+          <h1>Give MeritOS enough context to be useful.</h1>
+          <p>This guided setup disappears when you finish. Your profile remains editable.</p>
+          <div className="mos-field-grid">
+            <label>Full name<input value={profile.displayName} onChange={(event) => setProfile({ ...profile, displayName: event.target.value })} placeholder="Your full name" /></label>
+            <label>Current direction<input value={profile.headline} onChange={(event) => setProfile({ ...profile, headline: event.target.value })} placeholder="What are you working toward?" /></label>
           </div>
-          <div className="onboarding-import">
-            <div><strong>1. Upload your résumé</strong><small>PDF, DOCX, or TXT. MeritOS extracts candidates from the real file.</small></div>
-            <button className="secondary-button" onClick={() => setShowImport(true)}>Choose document</button>
+          <div className="mos-setup-row">
+            <span><b>1</b><span><strong>Import your résumé or CV</strong><small>PDF, DOCX, or TXT. AI groups related bullets into usable facts.</small></span></span>
+            <button className="mos-button light" onClick={() => setShowImport(true)}>Choose document</button>
           </div>
-          <div className="onboarding-import">
-            <div><strong>2. Verify extracted facts</strong><small>{claims.length ? `${verifiedCount} of ${claims.length} facts verified` : "Upload a document to begin."}</small></div>
-            <span className="status-pill neutral">{claims.length ? "Review below" : "Waiting"}</span>
+          <div className="mos-setup-row">
+            <span><b>2</b><span><strong>Verify extracted facts</strong><small>{verifiedClaims.length} of {claims.length} currently approved.</small></span></span>
+            <span className="mos-pill">{claims.length ? "Review below" : "Waiting for upload"}</span>
           </div>
-          {claims.length > 0 && <div className="onboarding-claims">{claims.map((claim) => <article key={claim.id}><div><strong>{claim.title}</strong><small>{claim.source}</small></div><button className={claim.status === "verified" ? "secondary-button" : "primary-button"} onClick={() => toggleClaimStatus(claim.id)}>{claim.status === "verified" ? "Verified ✓" : "Verify fact"}</button></article>)}</div>}
-          <button className="primary-button onboarding-finish" disabled={!profileName.trim() || verifiedCount === 0} onClick={finishOnboarding}>Finish setup and open workspace</button>
-          {verifiedCount === 0 && <small className="finish-hint">Verify at least one real fact before finishing.</small>}
+          {claims.length > 0 && (
+            <div className="mos-onboarding-claims">
+              {claims.map((claim) => (
+                <article key={claim.id}>
+                  <span><small>{claim.category}</small><strong>{claim.statement}</strong></span>
+                  <button
+                    className={claim.status === "verified" ? "mos-button light" : "mos-button dark"}
+                    disabled={busy === `claim-${claim.id}`}
+                    onClick={() => changeClaimStatus(claim, claim.status === "verified" ? "draft" : "verified")}
+                  >
+                    {claim.status === "verified" ? "Verified ✓" : "Verify"}
+                  </button>
+                </article>
+              ))}
+            </div>
+          )}
+          <ErrorMessage message={error} />
+          <button
+            className="mos-button dark large full"
+            disabled={!profile.displayName.trim() || verifiedClaims.length === 0 || busy === "onboarding"}
+            onClick={finishOnboarding}
+          >
+            {busy === "onboarding" ? "Saving…" : "Finish profile setup"}
+          </button>
+          {verifiedClaims.length === 0 && <small className="mos-helper">Verify at least one real fact to continue.</small>}
         </section>
-        {showImport && (
-          <div className="modal-backdrop" role="presentation" onMouseDown={closeImport}>
-            <section className="import-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
-              <button className="modal-close" onClick={closeImport}>×</button>
-              <span className="eyebrow">Résumé import</span><h2>Add your résumé</h2>
-              {(importStage === "idle" || importStage === "error") && <><label className="drop-zone" onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}><input type="file" accept=".pdf,.docx,.txt" onChange={(event) => chooseFile(event.target.files?.[0])} /><strong>Choose a PDF, DOCX, or TXT file</strong><small>Up to 12 MB</small></label>{importMessage && <p className="form-error">{importMessage}</p>}</>}
-              {importStage === "selected" && selectedFile && <div className="selected-file"><div><strong>{selectedFile.name}</strong><span>{formatFileSize(selectedFile.size)}</span></div><button className="primary-button" onClick={runImport}>Extract facts</button></div>}
-              {importStage === "uploading" && <div className="import-progress"><h3>Reading your document…</h3><div className="loading-bar"><span /></div></div>}
-              {importStage === "done" && <div className="import-result"><span className="result-check">✓</span><h3>Facts ready to verify</h3><p>{importMessage}</p><button className="primary-button" onClick={closeImport}>Review now</button></div>}
-            </section>
-          </div>
-        )}
+        {showImport && renderImportModal()}
       </main>
     );
   }
+
+  const pageTitle = navigation.find((item) => item.id === view)?.label || "Home";
 
   return (
-    <main className="app-shell">
-      <aside className="sidebar">
+    <main className="mos-app">
+      <aside className="mos-sidebar">
         <Logo />
-        <nav aria-label="Main navigation">
-          <p className="nav-label">Workspace</p>
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              className={view === item.id ? "nav-item active" : "nav-item"}
-              onClick={() => setView(item.id)}
-            >
-              <span className="nav-glyph" aria-hidden="true">
-                {item.glyph}
-              </span>
-              {item.label}
-              {item.id === "review" && (
-                <span className="nav-count">3</span>
-              )}
+        <p className="mos-nav-label">Workspace</p>
+        <nav>
+          {navigation.map((item) => (
+            <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => goTo(item.id)}>
+              <span>{item.index}</span>{item.label}
+              {item.id === "review" && reviewClaims.length > 0 && <b>{reviewClaims.length}</b>}
             </button>
           ))}
         </nav>
-
-        <div className="season-card">
-          <div className="season-card-top">
-            <span>Application season</span>
-            <strong>62%</strong>
-          </div>
-          <div className="mini-progress">
-            <span style={{ width: "62%" }} />
-          </div>
-          <p>3 active · 1 review ready</p>
+        <div className="mos-sidebar-status">
+          <span><small>Profile coverage</small><strong>{profileCoverage}%</strong></span>
+          <div><i style={{ width: `${profileCoverage}%` }} /></div>
+          <p>{verifiedClaims.length} verified facts · {coveredAreas.length}/{coverageAreas.length} context areas</p>
         </div>
-
-        <div className="profile-card">
+        <div className="mos-user">
+          <span>{profile.displayName.slice(0, 2).toUpperCase()}</span>
+          <div><strong>{profile.displayName}</strong><small>{profile.headline || "Add your direction"}</small></div>
           <UserButton />
-          <span>
-            <strong>{profileName || user?.firstName || "Your profile"}</strong>
-            <small>{headline || "Verified workspace"}</small>
-          </span>
         </div>
       </aside>
 
-      <section className="workspace">
-        <header className="topbar">
-          <div>
-            <span className="eyebrow">2026 application season</span>
-            <h1>
-              {view === "overview" && "Your application journey"}
-              {view === "lifegraph" && "Step 1: Build your profile"}
-              {view === "applications" && "Step 2: Complete an application"}
-              {view === "review" && "Step 3: Review before submitting"}
-              {view === "stories" && "Stories and essays"}
-            </h1>
-          </div>
-          <div className="top-actions">
-            <button
-              className="icon-button"
-              aria-label="Search"
-              onClick={() => setShowSearch(true)}
-            >
-              ⌕
-            </button>
-            <button
-              className="secondary-button"
-              onClick={() => {
-                setShowImport(true);
-                setImportStage("idle");
-              }}
-            >
-              <span aria-hidden="true">＋</span> Add evidence
-            </button>
+      <section className="mos-workspace">
+        <header className="mos-topbar">
+          <div><span className="mos-kicker">Your private application workspace</span><h1>{pageTitle}</h1></div>
+          <div className="mos-top-actions">
+            <button className="mos-button light" onClick={() => openFactForm()}>Add context</button>
+            <button className="mos-button dark" onClick={() => setShowImport(true)}>Upload document</button>
           </div>
         </header>
 
+        <ErrorMessage message={error} />
+
         {view === "overview" && (
-          <div className="page-grid overview-page">
-            <section className="hero-card">
-              <div className="hero-copy">
-                <StatusPill tone="green">Your guided workspace</StatusPill>
-                <h2>Turn your real experience into a stronger application.</h2>
-                <p>
-                  Upload your documents once. MeritOS helps you find truthful
-                  answers, complete each application, and check it before you
-                  submit. You approve every suggestion.
-                </p>
-                <div className="hero-actions">
-                  <button
-                    className="primary-button"
-                    onClick={() => goTo("lifegraph")}
-                  >
-                    Continue with your profile
-                  </button>
-                  <button
-                    className="text-button"
-                    onClick={() => goTo("applications")}
-                  >
-                    Try the sample application <span>→</span>
-                  </button>
-                </div>
-              </div>
-              <div className="hero-score">
-                <div className="depth-scene" aria-hidden="true">
-                  <span className="depth-plane plane-one" />
-                  <span className="depth-plane plane-two" />
-                  <span className="depth-node node-one" />
-                  <span className="depth-node node-two" />
-                  <span className="depth-line" />
-                </div>
-                <div className="readiness-object">
-                  <ProgressRing value={84} label="readiness" />
-                  <div className="score-caption">
-                    <span className="signal-dot" />
-                    Competitive · moderate confidence
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="extension-banner">
-              <div className="extension-visual" aria-hidden="true"><img src="/meritos-mark.svg" alt="" /><i /><i /><i /></div>
+          <div className="mos-page mos-overview">
+            <section className="mos-hero" data-reveal>
               <div>
-                <span className="eyebrow">Use MeritOS on application websites</span>
-                <h2>Install the Chrome side panel</h2>
-                <p>Open a grant or application form, click MeritOS, review detected questions, and fill only the answers you approve.</p>
-                {extensionToken && <code>{extensionToken}</code>}
-              </div>
-              <div className="extension-actions"><a className="secondary-button" href="/install">Install extension</a><button className="primary-button" onClick={createExtensionConnection}>{extensionToken ? "Copy new connection key" : "Connect Chrome extension"}</button></div>
-            </section>
-
-            <section className="guided-path" aria-labelledby="guided-path-title">
-              <div className="guided-path-heading">
-                <div>
-                  <span className="eyebrow">How MeritOS works</span>
-                  <h2 id="guided-path-title">One application, four clear steps</h2>
-                </div>
-                <p>
-                  Start with your verified profile, then move from left to right.
-                  MeritOS will always show you the next action.
-                </p>
-              </div>
-              <div className="guided-steps">
-                <button className="guided-step current" onClick={() => goTo("lifegraph")}>
-                  <span className="step-number">1</span>
-                  <span className="step-state">{verifiedCount} facts verified</span>
-                  <strong>Build your profile</strong>
-                  <small>Upload a résumé and confirm the facts MeritOS may use.</small>
-                  <span className="step-action">Continue profile →</span>
-                </button>
-                <button className="guided-step" onClick={() => goTo("applications")}>
-                  <span className="step-number">2</span>
-                  <span className="step-state">Sample ready</span>
-                  <strong>Open an application</strong>
-                  <small>Choose a program and see its requirements and questions.</small>
-                  <span className="step-action">Open application →</span>
-                </button>
-                <button className="guided-step" onClick={() => goTo("applications")}>
-                  <span className="step-number">3</span>
-                  <span className="step-state">{approvedFields.length}/3 approved</span>
-                  <strong>Complete the questions</strong>
-                  <small>Review evidence-backed answers and approve them yourself.</small>
-                  <span className="step-action">Review answers →</span>
-                </button>
-                <button className="guided-step" onClick={() => goTo("review")}>
-                  <span className="step-number">4</span>
-                  <span className="step-state">
-                    {reviewComplete ? "Preview available" : "Reviewing"}
-                  </span>
-                  <strong>Check before submitting</strong>
-                  <small>Find missing evidence, weak answers, and the best improvements.</small>
-                  <span className="step-action">See review →</span>
-                </button>
-              </div>
-              <div className="safety-note">
-                <strong>MeritOS never submits for you.</strong>
-                <span>It suggests, explains, and checks. You make every final decision.</span>
-              </div>
-            </section>
-
-            <section className="section-card applications-summary">
-              <div className="section-heading">
-                <div>
-                  <span className="eyebrow">Active work</span>
-                  <h2>Applications in motion</h2>
-                </div>
-                <button
-                  className="text-button"
-                  onClick={() => setView("applications")}
-                >
-                  Open applications
-                </button>
-              </div>
-              <div className="application-list">
-                {applications.map((app) => (
-                  <button
-                    className="application-row"
-                    key={app.id}
-                    onClick={() => {
-                      setSelectedApplication(app.id);
-                      setView("applications");
-                    }}
-                  >
-                    <span className={`app-monogram ${app.tone}`}>
-                      {app.name.slice(0, 1)}
-                    </span>
-                    <span className="app-copy">
-                      <strong>{app.name}</strong>
-                      <small>
-                        {app.organization} · {app.tasks} actions left
-                      </small>
-                    </span>
-                    <span className="app-progress">
-                      <span className="mini-progress">
-                        <span style={{ width: `${app.progress}%` }} />
-                      </span>
-                      <small>{app.progress}%</small>
-                    </span>
-                    <StatusPill tone={app.tone}>{app.status}</StatusPill>
-                    <span className="deadline">
-                      <small>Due</small>
-                      <strong>{app.deadline}</strong>
-                    </span>
-                    <span className="row-arrow">›</span>
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            <section className="section-card next-actions">
-              <div className="section-heading">
-                <div>
-                  <span className="eyebrow">Highest value first</span>
-                  <h2>Next best actions</h2>
+                <span className="mos-pill inverse">{fit ? "Target-aware workspace" : "Verified profile workspace"}</span>
+                <h2>{fit ? `Build a stronger case for ${fit.target}.` : "Build the context MeritOS needs to answer well."}</h2>
+                <p>{fit?.summary || "Add your evidence, motivations, goals, and real outcomes once. MeritOS will use only approved facts when it helps on external forms."}</p>
+                <div className="mos-action-row">
+                  <button className="mos-button pale" onClick={() => goTo(fit ? "fit" : "profile")}>{fit ? "Open target analysis" : "Continue my profile"}</button>
+                  <button className="mos-button text-inverse" onClick={() => goTo("extension")}>Use on a real form →</button>
                 </div>
               </div>
-              <div className="action-list">
-                <button onClick={() => setView("applications")}>
-                  <span className="action-index urgent">1</span>
-                  <span>
-                    <strong>Clarify your individual research contribution</strong>
-                    <small>Rhodes · Personal statement · 8 minute task</small>
-                  </span>
-                  <StatusPill tone="gold">High leverage</StatusPill>
-                </button>
-                <button onClick={() => setView("lifegraph")}>
-                  <span className="action-index">2</span>
-                  <span>
-                    <strong>Verify the “32% improvement” claim</strong>
-                    <small>Used in 2 applications · evidence gap</small>
-                  </span>
-                  <StatusPill tone="blue">Evidence</StatusPill>
-                </button>
-                <button onClick={() => setView("stories")}>
-                  <span className="action-index">3</span>
-                  <span>
-                    <strong>Replace the repeated mentoring example</strong>
-                    <small>Fulbright · Story allocation · 5 minute task</small>
-                  </span>
-                  <StatusPill tone="violet">Narrative</StatusPill>
-                </button>
-              </div>
+              <ReadinessVisual value={readinessValue} label={fit ? formatBand(fit.readinessBand) : "profile coverage"} />
             </section>
 
-            <aside className="section-card trust-panel">
-              <span className="eyebrow">Truth layer</span>
-              <h2>Evidence health</h2>
-              <div className="trust-stat">
-                <strong>18</strong>
-                <span>verified claims</span>
-              </div>
-              <div className="trust-stat">
-                <strong>4</strong>
-                <span>restricted claims</span>
-              </div>
-              <div className="trust-stat warning">
-                <strong>2</strong>
-                <span>need review</span>
-              </div>
-              <div className="divider" />
-              <p>
-                No unsupported claim will be filled without a visible warning
-                and your approval.
-              </p>
-              <button className="text-button" onClick={() => setView("lifegraph")}>
-                Inspect LifeGraph →
-              </button>
-            </aside>
+            <section className="mos-metric-strip" data-reveal>
+              <article><small>Verified facts</small><strong>{verifiedClaims.length}</strong><span>safe for supported answers</span></article>
+              <article><small>Needs your review</small><strong>{reviewClaims.length}</strong><span>excluded from autofill</span></article>
+              <article><small>Context coverage</small><strong>{coveredAreas.length}/{coverageAreas.length}</strong><span>areas represented</span></article>
+              <article><small>Reusable stories</small><strong>{stories.length}</strong><span>{stories.filter((story) => story.status === "approved").length} approved</span></article>
+            </section>
+
+            <section className="mos-grid two-one">
+              <article className="mos-card" data-reveal>
+                <div className="mos-card-head"><div><span className="mos-kicker">Next best actions</span><h3>Make MeritOS more accurate</h3></div></div>
+                <div className="mos-action-list">
+                  {reviewClaims.length > 0 && <button onClick={() => goTo("review")}><b>01</b><span><strong>Review {reviewClaims.length} extracted facts</strong><small>Unverified information cannot enter forms.</small></span><i>→</i></button>}
+                  {coverageAreas.length < coverageAreas.length && <button onClick={() => openFactForm(coverageAreas.find((area) => !coveredAreas.includes(area))?.name)}><b>02</b><span><strong>Fill a missing context area</strong><small>Your résumé does not explain everything that matters.</small></span><i>→</i></button>}
+                  <button onClick={() => goTo("fit")}><b>03</b><span><strong>{fit ? "Refresh target fit" : "Tell MeritOS what you are targeting"}</strong><small>Turn your profile into a specific improvement plan.</small></span><i>→</i></button>
+                  <button onClick={() => goTo("extension")}><b>04</b><span><strong>Install or reconnect the Chrome side panel</strong><small>Use approved profile facts on legitimate external forms.</small></span><i>→</i></button>
+                </div>
+              </article>
+              <article className="mos-card mos-context-card" data-reveal>
+                <span className="mos-kicker">What MeritOS knows</span>
+                <h3>Context map</h3>
+                <div className="mos-coverage-list">
+                  {coverageAreas.map((area) => {
+                    const covered = coveredAreas.includes(area);
+                    return <button key={area.name} onClick={() => !covered && openFactForm(area.name)}><span className={covered ? "covered" : ""} />{area.name}<small>{covered ? "Ready" : "Add"}</small></button>;
+                  })}
+                </div>
+              </article>
+            </section>
+
+            <section className="mos-extension-callout" data-reveal>
+              <img src="/meritos-mark-v2.png" alt="" />
+              <div><span className="mos-kicker">External forms only</span><h3>MeritOS works beside the website where you are actually applying.</h3><p>The extension scans visible fields, shows evidence-backed suggestions, lets you approve them together, and never submits.</p></div>
+              <button className="mos-button dark" onClick={() => goTo("extension")}>Set up extension</button>
+            </section>
           </div>
         )}
 
-        {view === "lifegraph" && (
-          <div className="content-page">
-            <section className="next-step-banner">
-              <span className="next-step-check" aria-hidden="true">✓</span>
-              <div>
-                <span className="eyebrow">Step 1 in progress</span>
-                <h2>Your profile has {verifiedCount} verified facts.</h2>
-                <p>
-                  Approve anything that is accurate. When you are ready, use
-                  those facts to complete the sample application.
-                </p>
-              </div>
-              <button className="primary-button" onClick={() => goTo("applications")}>
-                Next: open an application
-              </button>
+        {view === "profile" && (
+          <div className="mos-page">
+            <section className="mos-page-intro" data-reveal>
+              <div><span className="mos-kicker">Your source of truth</span><h2>Build the fullest truthful picture of you.</h2><p>Documents provide evidence. Direct context captures goals, motivations, preferences, and details that never make it onto a résumé.</p></div>
+              <div className="mos-action-row"><button className="mos-button light" onClick={() => openFactForm()}>Add context manually</button><button className="mos-button dark" onClick={() => setShowImport(true)}>Upload a document</button></div>
             </section>
-            <section className="metrics-strip">
-              <div>
-                <span>Verified claims</span>
-                <strong>{verifiedCount}</strong>
-                <small>Ready for applications</small>
-              </div>
-              <div>
-                <span>Evidence sources</span>
-                <strong>12</strong>
-                <small>CV, reports, portfolio</small>
-              </div>
-              <div>
-                <span>Potential conflicts</span>
-                <strong className="gold-text">2</strong>
-                <small>Dates and one impact metric</small>
-              </div>
-              <div>
-                <span>Sensitive claims</span>
-                <strong>4</strong>
-                <small>Explicit permission required</small>
-              </div>
+            <section className="mos-coverage-grid" data-reveal>
+              {coverageAreas.map((area) => {
+                const count = verifiedClaims.filter((claim) => area.pattern.test(`${claim.category} ${claim.statement}`)).length;
+                return (
+                  <button key={area.name} className={count ? "complete" : ""} onClick={() => !count && openFactForm(area.name)}>
+                    <span>{count ? "✓" : "+"}</span><strong>{area.name}</strong><small>{count ? `${count} verified` : "Add context"}</small>
+                  </button>
+                );
+              })}
             </section>
-
-            <section className="section-card">
-              <div className="section-heading">
-                <div>
-                  <span className="eyebrow">Canonical evidence</span>
-                  <h2>Claims and experiences</h2>
-                </div>
-                <div className="segmented">
-                  <button
-                    className={claimFilter === "all" ? "active" : ""}
-                    onClick={() => setClaimFilter("all")}
-                  >
-                    All
-                  </button>
-                  <button
-                    className={claimFilter === "verified" ? "active" : ""}
-                    onClick={() => setClaimFilter("verified")}
-                  >
-                    Verified
-                  </button>
-                  <button
-                    className={claimFilter === "review" ? "active" : ""}
-                    onClick={() => setClaimFilter("review")}
-                  >
-                    Needs review
-                  </button>
+            <section className="mos-card" data-reveal>
+              <div className="mos-card-head">
+                <div><span className="mos-kicker">Profile facts</span><h3>{filteredClaims.length} facts shown</h3></div>
+                <div className="mos-filter-row">
+                  <input value={claimQuery} onChange={(event) => setClaimQuery(event.target.value)} placeholder="Search profile" aria-label="Search profile facts" />
+                  {(["all", "verified", "review"] as const).map((filter) => <button key={filter} className={claimFilter === filter ? "active" : ""} onClick={() => setClaimFilter(filter)}>{filter}</button>)}
                 </div>
               </div>
-              <div className="claims-list">
+              <div className="mos-claim-list">
                 {filteredClaims.map((claim) => (
-                  <article className="claim-card" key={claim.id}>
-                    <div className={`claim-state ${claim.status}`} aria-hidden="true" />
-                    <div className="claim-main">
-                      <div className="claim-title-row">
-                        <h3>{claim.title}</h3>
-                        <StatusPill
-                          tone={
-                            claim.status === "verified"
-                              ? "green"
-                              : claim.status === "restricted"
-                                ? "violet"
-                                : "gold"
-                          }
-                        >
-                          {claim.status === "verified"
-                            ? "Verified"
-                            : claim.status === "restricted"
-                              ? "Restricted"
-                              : "Needs review"}
-                        </StatusPill>
-                      </div>
-                      <p>{claim.detail}</p>
-                      <div className="claim-meta">
-                        <span>⌁ {claim.source}</span>
-                        <span>◉ {claim.evidence} source{claim.evidence > 1 ? "s" : ""}</span>
-                        {claim.themes.map((theme) => (
-                          <span className="theme-tag" key={theme}>
-                            {theme}
-                          </span>
-                        ))}
-                      </div>
+                  <article key={claim.id}>
+                    <span className={`mos-claim-state ${claim.status}`} />
+                    <div><small>{claim.category} · {evidenceSource(claim.evidence)}</small><strong>{claim.statement}</strong><p>{claim.status === "verified" ? "Available for supported answers" : claim.status === "restricted" ? "Sensitive and excluded unless you approve it" : "Excluded until you verify it"}</p></div>
+                    <div className="mos-claim-actions">
+                      <button className="mos-button light small" disabled={busy === `claim-${claim.id}`} onClick={() => changeClaimStatus(claim, claim.status === "verified" ? "draft" : "verified")}>{claim.status === "verified" ? "Unverify" : "Verify"}</button>
+                      <button className="mos-button ghost small" onClick={() => changeClaimStatus(claim, "restricted")}>Restrict</button>
+                      <button className="mos-button danger small" onClick={() => deleteClaim(claim)}>Delete</button>
                     </div>
-                    <button
-                      className="secondary-button compact"
-                      onClick={() => {
-                        toggleClaimStatus(claim.id);
-                        announce(
-                          claim.status === "verified"
-                            ? "Claim marked for review. Refresh the committee review to reflect it."
-                            : "Claim verified. Run a fresh review to see the impact.",
-                        );
-                      }}
-                    >
-                      {claim.status === "verified" ? "Mark for review" : "Verify claim"}
-                    </button>
                   </article>
                 ))}
-                {filteredClaims.length === 0 && (
-                  <div className="empty-state">
-                    <strong>No matching evidence yet.</strong>
-                    <span>Try a different filter or add a document.</span>
-                  </div>
-                )}
+                {!filteredClaims.length && <div className="mos-empty"><strong>No matching facts.</strong><p>Upload a document or add context directly.</p></div>}
               </div>
             </section>
-          </div>
-        )}
-
-        {view === "applications" && (
-          <div className="content-page application-workspace">
-            <section className="next-step-banner application-guide">
-              <span className="next-step-check" aria-hidden="true">2</span>
-              <div>
-                <span className="eyebrow">What to do here</span>
-                <h2>Review the suggested answers below.</h2>
-                <p>
-                  Click each answer’s evidence label to approve it. Then apply
-                  your approved suggestions and continue to the final review.
-                </p>
-              </div>
-              <button className="secondary-button" onClick={() => setShowOverlay(true)}>
-                Open focused overlay
-              </button>
-            </section>
-            <div className="application-tabs" role="tablist" aria-label="Applications">
-              {applications.map((app) => (
-                <button
-                  key={app.id}
-                  role="tab"
-                  aria-selected={selectedApplication === app.id}
-                  className={selectedApplication === app.id ? "active" : ""}
-                  onClick={() => setSelectedApplication(app.id)}
-                >
-                  <span className={`app-dot ${app.tone}`} />
-                  {app.name}
-                </button>
-              ))}
-            </div>
-
-            <section className="application-header-card">
-              <div>
-                <span className="eyebrow">{selectedApp.organization}</span>
-                <h2>{selectedApp.name}</h2>
-                <p>
-                  Due {selectedApp.deadline} · {selectedApp.tasks} actions
-                  remaining
-                </p>
-              </div>
-              <div className="app-header-status">
-                <ProgressRing value={selectedApp.progress} label="complete" />
-                <div className="application-header-actions">
-                  <button
-                    className="secondary-button inverse"
-                    onClick={() => setShowOverlay(true)}
-                  >
-                    Open screen overlay
-                  </button>
-                  <button
-                    className="primary-button"
-                    onClick={() => announce("Application checklist opened.")}
-                  >
-                    Continue application
-                  </button>
-                </div>
-              </div>
-            </section>
-
-            <div className="two-column">
-              <section className="section-card">
-                <div className="section-heading">
-                  <div>
-                    <span className="eyebrow">Opportunity preflight</span>
-                    <h2>Requirements and readiness</h2>
-                  </div>
-                  <StatusPill tone="green">Eligible</StatusPill>
-                </div>
-                <div className="requirement-list">
-                  {[
-                    ["Academic standing", "Satisfied", "Transcript · verified", "green"],
-                    ["Institutional nomination", "In progress", "Advisor confirmation due Aug 2", "gold"],
-                    ["Two recommendations", "1 of 2 ready", "Research supervisor confirmed", "blue"],
-                    ["Personal statement", "Draft ready", "748 of 750 words", "violet"],
-                    ["AI assistance policy", "Coaching allowed", "Applicant must author final prose", "green"],
-                  ].map(([name, state, detail, tone]) => (
-                    <div className="requirement-row" key={name}>
-                      <span className={`requirement-icon ${tone}`}>✓</span>
-                      <span>
-                        <strong>{name}</strong>
-                        <small>{detail}</small>
-                      </span>
-                      <StatusPill tone={tone}>{state}</StatusPill>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <section className="section-card overlay-demo">
-                <div className="section-heading">
-                  <div>
-                    <span className="eyebrow">Screen overlay</span>
-                    <h2>Try it before you connect a portal</h2>
-                  </div>
-                  <span className="live-badge">
-                    <span /> Preview mode
-                  </span>
-                </div>
-                <div className="mock-browser">
-                  <div className="mock-browser-bar">
-                    <span /><span /><span />
-                    <div>application.portal.edu / personal-statement</div>
-                  </div>
-                  <div className="mock-form">
-                    <div className="mock-field">
-                      <label>Preferred name</label>
-                      <div className="mock-input approved">Aahan S.</div>
-                      <button
-                        className="field-status green"
-                        onClick={() => approveField("name")}
-                      >
-                        Verified · CV
-                      </button>
-                    </div>
-                    <div className="mock-field narrative">
-                      <label>Describe a significant leadership experience</label>
-                      <div className="mock-textarea">
-                        During my assistive-technology research project, I
-                        coordinated a five-person team through an unexpected
-                        change in our study protocol…
-                      </div>
-                      <button
-                        className={`field-status blue ${
-                          approvedFields.includes("leadership") ? "approved" : ""
-                        }`}
-                        onClick={() => approveField("leadership")}
-                      >
-                        {approvedFields.includes("leadership")
-                          ? "Approved by you"
-                          : "Evidence-backed · review"}
-                      </button>
-                    </div>
-                    <div className="mock-field">
-                      <label>Household financial context</label>
-                      <div className="mock-input muted-input">
-                        Sensitive information is locked
-                      </div>
-                      <button
-                        className="field-status violet"
-                        onClick={() => announce("One-time permission is required.")}
-                      >
-                        Restricted · ask first
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                <div className="overlay-footer">
-                  <span>
-                    {approvedFields.length}/3 fields approved · submission is
-                    always manual
-                  </span>
-                  <button
-                    className="secondary-button compact"
-                    onClick={applyOverlaySuggestions}
-                  >
-                    Apply approved suggestions
-                  </button>
-                </div>
-                {overlayApplied && (
-                  <div className="completion-callout" role="status">
-                    <span aria-hidden="true">✓</span>
-                    <div>
-                      <strong>Your approved answers are in the preview.</strong>
-                      <small>Nothing was submitted. The next step is a final quality review.</small>
-                    </div>
-                    <button className="primary-button" onClick={() => goTo("review")}>
-                      Review before submitting
-                    </button>
-                  </div>
-                )}
-              </section>
-            </div>
           </div>
         )}
 
         {view === "review" && (
-          <div className="content-page review-page">
-            <section className="review-hero">
-              <div>
-                <span className="eyebrow">Rhodes Scholarship · simulated committee</span>
-                <h2>
-                  {reviewedVerifiedCount > 3
-                    ? "Your verified evidence strengthened the committee’s read."
-                    : "Competitive, with one evidence gap the committee will notice."}
-                </h2>
-                <p>
-                  This is a transparent simulation based on the public
-                  criteria and your approved evidence—not an official decision
-                  or an acceptance prediction.
-                </p>
-              </div>
-              <div className="review-actions">
-                <div className="review-status-stack">
-                  <StatusPill tone="gold">Moderate confidence</StatusPill>
-                  {evidenceChangesSinceReview !== 0 && (
-                    <span className="review-stale-note">
-                      {Math.abs(evidenceChangesSinceReview)} evidence change{Math.abs(evidenceChangesSinceReview) === 1 ? "" : "s"} not reviewed yet
-                    </span>
-                  )}
-                </div>
-                <button
-                  className="primary-button"
-                  onClick={runReview}
-                  disabled={reviewRunning}
-                >
-                  {reviewRunning ? "Reviewing…" : "Run fresh review"}
-                </button>
+          <div className="mos-page">
+            <section className="mos-page-intro" data-reveal>
+              <div><span className="mos-kicker">Truth check</span><h2>Review what MeritOS is allowed to use.</h2><p>This is profile QA—not an admissions review. Fix weak extraction, protect sensitive details, and close context gaps before opening an application form.</p></div>
+              <div className="mos-score-chip"><strong>{profileCoverage}%</strong><span>profile coverage</span></div>
+            </section>
+            <section className="mos-review-grid">
+              <article className="mos-card" data-reveal><span className="mos-kicker">Needs attention</span><h3>{reviewClaims.length} facts are excluded</h3><p>Draft, inferred, missing, and restricted facts never autofill as verified information.</p><button className="mos-button dark" onClick={() => { setClaimFilter("review"); goTo("profile"); }}>Review these facts</button></article>
+              <article className="mos-card" data-reveal><span className="mos-kicker">Context gaps</span><h3>{coverageAreas.length - coveredAreas.length} areas are thin</h3><div className="mos-mini-tags">{coverageAreas.filter((area) => !coveredAreas.includes(area)).map((area) => <button key={area.name} onClick={() => openFactForm(area.name)}>{area.name} +</button>)}</div></article>
+              <article className="mos-card" data-reveal><span className="mos-kicker">Sensitive context</span><h3>{claims.filter((claim) => claim.status === "restricted" || claim.sensitivity === "sensitive").length} protected facts</h3><p>These remain out of suggestions unless you deliberately change their permissions.</p></article>
+            </section>
+            <section className="mos-card" data-reveal>
+              <div className="mos-card-head"><div><span className="mos-kicker">Verified evidence ledger</span><h3>What the extension can currently reference</h3></div><button className="mos-button light" onClick={() => goTo("fit")}>Check against a target</button></div>
+              <div className="mos-ledger">
+                {coverageAreas.map((area) => {
+                  const areaClaims = verifiedClaims.filter((claim) => area.pattern.test(`${claim.category} ${claim.statement}`));
+                  return <article key={area.name}><span className={areaClaims.length ? "ready" : ""}>{areaClaims.length ? "✓" : "—"}</span><div><strong>{area.name}</strong><small>{areaClaims.length ? `${areaClaims.length} supported fact${areaClaims.length === 1 ? "" : "s"}` : "No verified context"}</small></div>{!areaClaims.length && <button onClick={() => openFactForm(area.name)}>Add</button>}</article>;
+                })}
               </div>
             </section>
+          </div>
+        )}
 
-            {reviewRunning && (
-              <section className="review-loader" aria-live="polite">
-                <div className="review-loader-line" />
-                <p>Seven reviewers are reading independently…</p>
-              </section>
-            )}
-
-            {reviewComplete && (
+        {view === "fit" && (
+          <div className="mos-page">
+            <section className="mos-target-hero" data-reveal>
+              <div><span className="mos-kicker">Target-aware profile scan</span><h2>What are you trying to apply for?</h2><p>Be specific: include the program, field, award type, or role. MeritOS compares only your verified profile and returns a preparation score—not fake acceptance odds.</p></div>
+              <div className="mos-target-form">
+                <textarea value={target} onChange={(event) => setTarget(event.target.value)} placeholder="Example: undergraduate computational biology summer research programs focused on genomics and health equity" />
+                <button className="mos-button dark large" disabled={!target.trim() || busy === "fit"} onClick={runFitAnalysis}>{busy === "fit" ? "Scanning profile…" : fit ? "Refresh my analysis" : "Analyze my fit"}</button>
+              </div>
+            </section>
+            {fit ? (
               <>
-                <section className="committee-grid">
-                  {reviewRows.map((reviewer) => (
-                    <article className="reviewer-card" key={reviewer.name}>
-                      <div className="reviewer-top">
-                        <span className={`reviewer-avatar ${reviewer.tone}`}>
-                          {reviewer.name.slice(0, 1)}
-                        </span>
-                        <div>
-                          <strong>{reviewer.name}</strong>
-                          <small>Independent read</small>
-                        </div>
-                        <span className="review-score">{reviewer.score}</span>
-                      </div>
-                      <p>{reviewer.note}</p>
-                      <div className="score-bar">
-                        <span
-                          className={reviewer.tone}
-                          style={{ width: `${reviewer.score}%` }}
-                        />
-                      </div>
-                    </article>
-                  ))}
+                <section className="mos-fit-summary" data-reveal>
+                  <ReadinessVisual value={fit.score} label={formatBand(fit.readinessBand)} />
+                  <div><span className="mos-kicker">Directional target readiness</span><h2>{fit.positioning}</h2><p>{fit.summary}</p><small>{fit.confidence}</small></div>
                 </section>
-
-                <div className="review-details-grid">
-                  <section className="section-card rubric-card">
-                    <div className="section-heading">
-                      <div>
-                        <span className="eyebrow">Criterion coverage</span>
-                        <h2>How the case reads</h2>
-                      </div>
-                    </div>
-                    {[
-                      ["Academic preparation", 91, "green"],
-                      ["Leadership and character", 86 + reviewEvidenceGain * 2, "blue"],
-                      ["Commitment to service", 89, "violet"],
-                      ["Distinctive contribution", 72 + reviewEvidenceGain * 2, "gold"],
-                      ["Evidence strength", 76 + reviewEvidenceGain * 7, "gold"],
-                    ].map(([name, score, tone]) => (
-                      <div className="rubric-row" key={name}>
-                        <span>{name}</span>
-                        <div className="score-bar">
-                          <span
-                            className={tone as string}
-                            style={{ width: `${score}%` }}
-                          />
-                        </div>
-                        <strong>{score}</strong>
-                      </div>
-                    ))}
-                  </section>
-
-                  <section className="section-card chair-card">
-                    <span className="eyebrow">Committee chair synthesis</span>
-                    <h2>The strongest case</h2>
-                    <blockquote>
-                      “A technically capable, community-minded researcher whose
-                      work consistently turns complex systems into practical
-                      support for others.”
-                    </blockquote>
-                    <h3>Most credible rejection case</h3>
-                    <p>
-                      The applicant’s research impact is promising, but the
-                      package does not yet isolate their individual
-                      contribution clearly enough.
-                    </p>
-                  </section>
-
-                  <section className="section-card actions-card">
-                    <span className="eyebrow">Highest-leverage improvements</span>
-                    <h2>Do these three things{tasksAdded > 0 ? ` · ${tasksAdded} added` : ""}</h2>
-                    {[
-                      "Add one sentence naming the research decision you personally made.",
-                      "Attach a source that corroborates the 32% improvement metric.",
-                      "Use the community-health story instead of repeating the mentoring example.",
-                    ].map((action, index) => (
-                      <div className="improvement-row" key={action}>
-                        <span>{index + 1}</span>
-                        <p>{action}</p>
-                        <button onClick={() => {
-                          setTasksAdded((count) => count + 1);
-                          announce("Improvement added to your task list.");
-                        }}>
-                          Add task
-                        </button>
-                      </div>
-                    ))}
-                  </section>
-
-                  <section className="section-card uncertainty-card">
-                    <span className="eyebrow">Honest uncertainty</span>
-                    <h2>What MeritOS cannot know</h2>
-                    <ul>
-                      <li>Current applicant-pool strength</li>
-                      <li>Internal institutional priorities</li>
-                      <li>Reviewer assignment and discussion dynamics</li>
-                      <li>Changes in available awards</li>
-                    </ul>
-                    <div className="base-rate">
-                      <span>Published selection rate</span>
-                      <strong>≈ 0.7%</strong>
-                    </div>
-                    <p className="fine-print">
-                      MeritOS does not convert a language-model opinion into an
-                      acceptance percentage.
-                    </p>
-                  </section>
-                </div>
+                <section className="mos-grid two-one">
+                  <article className="mos-card" data-reveal><span className="mos-kicker">Strongest evidence</span><h3>What already supports your case</h3><div className="mos-insight-list">{fit.strengths.map((strength) => <article key={`${strength.claimId}-${strength.title}`}><span>✓</span><div><strong>{strength.title}</strong><p>{strength.reason}</p></div></article>)}</div></article>
+                  <article className="mos-card" data-reveal><span className="mos-kicker">Highest-value gaps</span><h3>What to improve next</h3><div className="mos-gap-list">{fit.gaps.map((gap) => <article key={gap.area}><span className={`mos-priority ${gap.priority}`}>{gap.priority}</span><strong>{gap.area}</strong><p>{gap.whyItMatters}</p><small>{gap.action}</small></article>)}</div></article>
+                </section>
+                <section className="mos-grid equal">
+                  <article className="mos-card" data-reveal><span className="mos-kicker">Missing personal context</span><h3>Questions only you can answer</h3><div className="mos-question-list">{fit.missingContextQuestions.map((question) => <button key={question} onClick={() => openFactForm("Motivation & goals", question)}><span>{question}</span><b>Add answer +</b></button>)}</div></article>
+                  <article className="mos-card" data-reveal><span className="mos-kicker">Where to look</span><h3>Targeted opportunity searches</h3><div className="mos-search-leads">{fit.opportunitySearches.map((search) => <a key={search.query} href={`https://www.google.com/search?q=${encodeURIComponent(search.query)}`} target="_blank" rel="noreferrer"><span><strong>{search.label}</strong><small>{search.why}</small></span><b>Search ↗</b></a>)}</div><p className="mos-fine-print">Search leads are not availability claims. Confirm eligibility and deadlines on official program pages.</p></article>
+                </section>
               </>
+            ) : (
+              <section className="mos-empty-state" data-reveal><img src="/meritos-mark-v2.png" alt="" /><h3>No target analysis yet.</h3><p>Enter one clear direction above. MeritOS will show strengths, missing evidence, context questions, story angles, and search leads.</p></section>
             )}
           </div>
         )}
 
         {view === "stories" && (
-          <div className="content-page story-page">
-            <section className="story-intro">
-              <div>
-                <span className="eyebrow">Narrative without invention</span>
-                <h2>One true experience, shaped for the question.</h2>
-                <p>
-                  Choose a lens to change emphasis—not facts. Every story stays
-                  linked to the evidence you approved.
-                </p>
-              </div>
-              <div className="lens-picker">
-                <span>Active narrative lens</span>
-                <div className="lens-buttons">
-                  {["Public service", "Research", "Leadership", "Resilience"].map(
-                    (item) => (
-                      <button
-                        key={item}
-                        className={lens === item ? "active" : ""}
-                        onClick={() => setLens(item)}
-                      >
-                        {item}
-                      </button>
-                    ),
-                  )}
-                </div>
-              </div>
+          <div className="mos-page">
+            <section className="mos-page-intro" data-reveal>
+              <div><span className="mos-kicker">Reusable truth, not canned essays</span><h2>Turn evidence into stories you can actually defend.</h2><p>Story Studio creates editable Situation–Action–Result–Reflection scaffolds from verified claims and flags what it still needs to ask you.</p></div>
+              <div className="mos-story-generator"><select value={storyLens} onChange={(event) => setStoryLens(event.target.value)}>{lenses.map((lens) => <option key={lens}>{lens}</option>)}</select><button className="mos-button dark" disabled={busy === "story"} onClick={generateStory}>{busy === "story" ? "Building…" : "Generate grounded story"}</button></div>
             </section>
-
-            <div className="story-layout">
-              <section className="section-card">
-                <div className="section-heading">
-                  <div>
-                    <span className="eyebrow">Story bank</span>
-                    <h2>Approved experiences</h2>
+            {storyQuestions.length > 0 && <section className="mos-question-callout" data-reveal><strong>This story needs your context</strong>{storyQuestions.map((question) => <button key={question} onClick={() => openFactForm("Story context", question)}>{question}<span>Add answer +</span></button>)}</section>}
+            <section className="mos-story-list">
+              {stories.map((story) => (
+                <article className="mos-story-card" key={story.id} data-reveal>
+                  <div className="mos-story-top"><div><span className={`mos-pill ${story.status === "approved" ? "success" : ""}`}>{story.status}</span><input value={story.title} onChange={(event) => updateStory(story.id, "title", event.target.value)} /></div><small>{story.lens} · {story.sourceClaimIds.length} supporting facts</small></div>
+                  <div className="mos-story-fields">
+                    {(["situation", "action", "result", "reflection"] as const).map((field) => <label key={field}><span>{field}</span><textarea value={story[field]} onChange={(event) => updateStory(story.id, field, event.target.value)} /></label>)}
                   </div>
-                  <button
-                    className="secondary-button compact"
-                    onClick={() => announce("Authenticity interview started.")}
-                  >
-                    ＋ Interview me
-                  </button>
-                </div>
-                <div className="story-list">
-                  {[
-                    {
-                      title: "The protocol changed three weeks before launch",
-                      theme: "Leadership",
-                      uses: 2,
-                      detail:
-                        "Research team · decision under uncertainty · measurable outcome",
-                    },
-                    {
-                      title: "A tutoring session became a student resource system",
-                      theme: "Public service",
-                      uses: 3,
-                      detail:
-                        "First-generation students · initiative · sustained community use",
-                    },
-                    {
-                      title: "The metric that forced me to redesign the workflow",
-                      theme: "Research",
-                      uses: 1,
-                      detail:
-                        "Automation project · intellectual honesty · 32% improvement",
-                    },
-                  ].map((story, index) => (
-                    <article className="story-card" key={story.title}>
-                      <span className="story-number">0{index + 1}</span>
-                      <div>
-                        <StatusPill tone={index === 1 ? "violet" : "blue"}>
-                          {story.theme}
-                        </StatusPill>
-                        <h3>{story.title}</h3>
-                        <p>{story.detail}</p>
-                        <small>Used in {story.uses} active application{story.uses > 1 ? "s" : ""}</small>
-                      </div>
-                      <button
-                        className="icon-button"
-                        aria-label={`Open ${story.title}`}
-                        onClick={() => announce("Story opened with its evidence.")}
-                      >
-                        →
-                      </button>
-                    </article>
-                  ))}
-                </div>
+                  <div className="mos-story-actions"><button className="mos-button light" disabled={busy === `story-${story.id}`} onClick={() => saveStory(story, "draft")}>Save changes</button><button className="mos-button dark" onClick={() => saveStory(story, "approved")}>Approve for reuse</button></div>
+                </article>
+              ))}
+              {!stories.length && <div className="mos-empty-state"><h3>Your story bank is empty.</h3><p>Choose a lens and generate a scaffold. MeritOS will never fill missing outcomes with guesses.</p></div>}
+            </section>
+          </div>
+        )}
+
+        {view === "interview" && (
+          <div className="mos-page">
+            <section className="mos-target-hero compact" data-reveal>
+              <div><span className="mos-kicker">Evidence-defense practice</span><h2>Practice for the target you care about.</h2><p>MeritOS creates questions from your target and verified profile, then critiques your answer without inventing a better life story.</p></div>
+              <div className="mos-target-form"><textarea value={target} onChange={(event) => setTarget(event.target.value)} placeholder="Program, fellowship, grant, or role" /><button className="mos-button dark" disabled={!target.trim() || busy === "interview"} onClick={generateInterview}>{busy === "interview" ? "Preparing…" : interview ? "New question set" : "Start practice"}</button></div>
+            </section>
+            {interview && activeQuestion ? (
+              <section className="mos-interview-layout">
+                <aside className="mos-question-nav" data-reveal>
+                  <span className="mos-kicker">{interview.questions.length} practice questions</span>
+                  {interview.questions.map((question, index) => <button key={question.id} className={activeQuestion.id === question.id ? "active" : ""} onClick={() => { setActiveQuestionId(question.id); setPracticeAnswer(""); setFeedback(null); }}><b>{String(index + 1).padStart(2, "0")}</b><span>{question.question}</span></button>)}
+                </aside>
+                <article className="mos-practice-card" data-reveal>
+                  <span className={`mos-pill ${activeQuestion.type}`}>{activeQuestion.type}</span>
+                  <h2>{activeQuestion.question}</h2>
+                  <p>{activeQuestion.whyItIsAsked}</p>
+                  <div className="mos-answer-hints"><strong>A strong answer should include</strong>{activeQuestion.strongAnswerNeeds.map((item) => <span key={item}>• {item}</span>)}</div>
+                  <label><span>Your practice answer</span><textarea value={practiceAnswer} onChange={(event) => setPracticeAnswer(event.target.value)} placeholder="Answer naturally. Specific beats polished." /></label>
+                  <button className="mos-button dark large" disabled={!practiceAnswer.trim() || busy === "feedback"} onClick={evaluateAnswer}>{busy === "feedback" ? "Reviewing…" : "Get evidence-backed feedback"}</button>
+                  {feedback && <div className="mos-feedback"><span className="mos-kicker">Coach feedback</span><h3>{feedback.summary}</h3><div className="mos-feedback-columns"><section><strong>Working</strong>{feedback.strengths.map((item) => <p key={item}>✓ {item}</p>)}</section><section><strong>Watch out</strong>{feedback.risks.map((item) => <p key={item}>△ {item}</p>)}</section></div><section><strong>Better outline</strong>{feedback.improvedOutline.map((item, index) => <p key={item}>{index + 1}. {item}</p>)}</section><blockquote>{feedback.followUpQuestion}</blockquote></div>}
+                </article>
               </section>
+            ) : (
+              <section className="mos-empty-state" data-reveal><h3>No practice session yet.</h3><p>Set your target above to generate fit, behavioral, technical, and skeptical follow-up questions.</p></section>
+            )}
+          </div>
+        )}
 
-              <aside className="section-card allocation-card">
-                <span className="eyebrow">Application coherence</span>
-                <h2>Story allocation</h2>
-                <p>
-                  Your mentoring story appears in three answers. Reviewers may
-                  remember the repetition more than the experience.
-                </p>
-                <div className="allocation-chart">
-                  <div style={{ "--size": "82%" } as React.CSSProperties}>
-                    <span>Mentoring</span><strong>3 uses</strong>
-                  </div>
-                  <div style={{ "--size": "55%" } as React.CSSProperties}>
-                    <span>Research pivot</span><strong>2 uses</strong>
-                  </div>
-                  <div style={{ "--size": "28%" } as React.CSSProperties}>
-                    <span>Workflow redesign</span><strong>1 use</strong>
-                  </div>
-                </div>
-                <button
-                  className="primary-button full"
-                  onClick={() => announce(`Answers rebalanced through the ${lens} lens.`)}
-                >
-                  Rebalance stories
-                </button>
-              </aside>
-            </div>
+        {view === "extension" && (
+          <div className="mos-page">
+            <section className="mos-extension-hero" data-reveal>
+              <div><span className="mos-kicker">The actual application workflow</span><h2>Your profile lives here. Autofill happens on the external form.</h2><p>Install the Chrome extension, connect it once, then open a legitimate grant, scholarship, program, or job form. MeritOS detects fields and opens beside the page.</p><div className="mos-action-row"><a className="mos-button pale large" href="/MeritOS-Chrome-Extension.zip">Download extension</a><a className="mos-button text-inverse" href="/extension-test.html" target="_blank">Open safe test form →</a></div></div>
+              <img src="/meritos-mark-v2.png" alt="" />
+            </section>
+            <section className="mos-install-grid">
+              <article data-reveal><b>01</b><strong>Download and unzip</strong><p>Download the MeritOS ZIP and choose Extract all.</p></article>
+              <article data-reveal><b>02</b><strong>Load it in Chrome</strong><p>At chrome://extensions, enable Developer mode and choose Load unpacked.</p></article>
+              <article data-reveal><b>03</b><strong>Connect your profile</strong><p>Create a one-time key below and paste it into the side panel.</p></article>
+              <article data-reveal><b>04</b><strong>Open a real form</strong><p>Approve supported suggestions together. Review narratives one by one.</p></article>
+            </section>
+            <section className="mos-card mos-key-card" data-reveal>
+              <div><span className="mos-kicker">Private connection</span><h3>Connect this profile to Chrome</h3><p>Creating a new key revokes the previous key. MeritOS shows it only once.</p></div>
+              <div>{extensionToken ? <code>{extensionToken}</code> : <span className="mos-key-placeholder">No new key shown</span>}<button className="mos-button dark" disabled={busy === "extension"} onClick={createExtensionConnection}>{busy === "extension" ? "Creating…" : extensionToken ? "Replace connection key" : "Create connection key"}</button></div>
+            </section>
+            <section className="mos-safety-grid" data-reveal>
+              <article><strong>It reads the visible form</strong><p>DOM and accessibility labels first—not hidden browser history.</p></article>
+              <article><strong>You approve suggestions</strong><p>Verified factual fields can be reviewed together; narratives stay individual.</p></article>
+              <article><strong>It never submits</strong><p>The final submission action always remains yours.</p></article>
+            </section>
           </div>
         )}
       </section>
 
-      {showOverlay && (
-        <div className="overlay-backdrop" role="presentation" onMouseDown={() => setShowOverlay(false)}>
-          <aside
-            className="screen-overlay"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="screen-overlay-title"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="screen-overlay-top">
-              <div>
-                <span className="eyebrow">MeritOS screen overlay</span>
-                <h2 id="screen-overlay-title">{selectedApp.name}</h2>
-                <p>Suggestions appear beside fields. You decide what gets applied.</p>
-              </div>
-              <button className="modal-close" onClick={() => setShowOverlay(false)} aria-label="Close overlay">×</button>
-            </div>
-            <div className="overlay-status-row">
-              <StatusPill tone="green">Page understood</StatusPill>
-              <span>Manual submission only</span>
-            </div>
-            <section className="overlay-field-card">
-              <span className="field-kicker">Preferred name</span>
-              <strong>Aahan S.</strong>
-              <p>Matched to verified CV evidence.</p>
-              <button className="field-status green" onClick={() => approveField("name")}>Verified · CV</button>
-            </section>
-            <section className="overlay-field-card">
-              <span className="field-kicker">Leadership response</span>
-              <strong>Assistive-technology research team</strong>
-              <p>Evidence-backed draft. Review the wording before applying it.</p>
-              <button
-                className={`field-status blue ${approvedFields.includes("leadership") ? "approved" : ""}`}
-                onClick={() => approveField("leadership")}
-              >
-                {approvedFields.includes("leadership") ? "Approved by you" : "Approve this draft"}
-              </button>
-            </section>
-            <section className="overlay-field-card restricted-overlay-field">
-              <span className="field-kicker">Financial context</span>
-              <strong>Locked sensitive information</strong>
-              <p>This is intentionally excluded until you grant one-time permission.</p>
-              <button className="field-status violet" onClick={() => announce("Sensitive information stays locked until you explicitly allow it.")}>Ask first</button>
-            </section>
-            <div className="screen-overlay-footer">
-              <span>{approvedFields.length}/3 suggestions approved</span>
-              <button className="primary-button full" onClick={applyOverlaySuggestions}>
-                {overlayApplied ? "Suggestions applied to preview" : "Apply approved suggestions"}
-              </button>
-              <small>MeritOS cannot submit this application for you.</small>
-            </div>
-          </aside>
-        </div>
-      )}
-
-      {showSearch && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={closeSearch}>
-          <section
-            className="search-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="search-title"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="search-modal-head">
-              <div>
-                <span className="eyebrow">Find your work</span>
-                <h2 id="search-title">Search evidence and applications</h2>
-              </div>
-              <button className="modal-close" onClick={closeSearch} aria-label="Close search">×</button>
-            </div>
-            <label className="search-field">
-              <span aria-hidden="true">⌕</span>
-              <input
-                autoFocus
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Try “research”, “leadership”, or a document name"
-              />
-            </label>
-            <div className="search-results">
-              {filteredClaims.slice(0, 5).map((claim) => (
-                <button
-                  key={claim.id}
-                  onClick={() => {
-                    setView("lifegraph");
-                    closeSearch();
-                    announce(`Opened evidence: ${claim.title}`);
-                  }}
-                >
-                  <span className={`claim-state ${claim.status}`} />
-                  <span><strong>{claim.title}</strong><small>{claim.source}</small></span>
-                  <span>View →</span>
-                </button>
-              ))}
-              {filteredClaims.length === 0 && <p>No matching evidence yet.</p>}
-            </div>
+      {showImport && renderImportModal()}
+      {showFactForm && (
+        <div className="mos-modal-backdrop" onMouseDown={() => setShowFactForm(false)}>
+          <section className="mos-modal" role="dialog" aria-modal="true" aria-labelledby="fact-title" onMouseDown={(event) => event.stopPropagation()}>
+            <button className="mos-modal-close" onClick={() => setShowFactForm(false)} aria-label="Close">×</button>
+            <span className="mos-kicker">Applicant-confirmed context</span><h2 id="fact-title">Add something MeritOS should know</h2>
+            {factPrompt && <blockquote>{factPrompt}</blockquote>}
+            <label>Context area<select value={factCategory} onChange={(event) => setFactCategory(event.target.value)}>{[...coverageAreas.map((area) => area.name), "Research", "Professional experience", "Story context", "Other"].map((category) => <option key={category}>{category}</option>)}</select></label>
+            <label>Your truthful answer<textarea autoFocus value={factStatement} onChange={(event) => setFactStatement(event.target.value)} placeholder="Write this in your own words. Include exact dates, outcomes, or motivation when relevant." /></label>
+            <p className="mos-fine-print">You are marking this as applicant-confirmed. MeritOS may use it for matching questions, drafting, and interview practice.</p>
+            <button className="mos-button dark large full" disabled={!factStatement.trim() || busy === "fact"} onClick={saveFact}>{busy === "fact" ? "Saving…" : "Save as verified context"}</button>
           </section>
         </div>
       )}
-
-      {showImport && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={closeImport}>
-          <section
-            className="import-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="import-title"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <button className="modal-close" onClick={closeImport} aria-label="Close">
-              ×
-            </button>
-            <span className="eyebrow">Local-first import</span>
-            <h2 id="import-title">Add evidence to your LifeGraph</h2>
-            <p>
-              MeritOS extracts candidate claims. Nothing becomes verified or
-              reusable until you review it.
-            </p>
-
-            {(importStage === "idle" || importStage === "error") && (
-              <>
-                <label
-                  className="drop-zone"
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={handleDrop}
-                >
-                  <input
-                    type="file"
-                    accept=".pdf,.doc,.docx,.txt"
-                    onChange={(event) => chooseFile(event.target.files?.[0])}
-                  />
-                  <span className="drop-icon">⇧</span>
-                  <strong>Choose a document or drop it here</strong>
-                  <small>PDF, DOCX, transcript, essay, or portfolio</small>
-                </label>
-                {importStage === "error" && (
-                  <p className="form-error" role="alert">{importMessage}</p>
-                )}
-                <div className="privacy-note">
-                  <span>◆</span>
-                  <p>
-                    This MVP processes the selected file as a local simulation
-                    and never submits it to an institution.
-                  </p>
-                </div>
-              </>
-            )}
-
-            {importStage === "selected" && selectedFile && (
-              <div className="selected-file">
-                <div className="selected-file-icon" aria-hidden="true">⌁</div>
-                <div>
-                  <strong>{selectedFile.name}</strong>
-                  <span>{formatFileSize(selectedFile.size)} · ready to add</span>
-                </div>
-                <button className="text-button" onClick={() => setImportStage("idle")}>Choose another</button>
-                <button className="primary-button" onClick={runImport}>Add to workspace</button>
-              </div>
-            )}
-
-            {importStage === "uploading" && (
-              <div className="import-progress">
-                <div className="document-stack">
-                  <span /><span /><span />
-                </div>
-                <h3>Saving your document and preparing it for review…</h3>
-                <div className="loading-bar"><span /></div>
-              </div>
-            )}
-
-            {importStage === "done" && (
-              <div className="import-result">
-                <span className="result-check">✓</span>
-                <h3>One new candidate claim found</h3>
-                <p>
-                  {importMessage} A draft evidence item is ready for you to review.
-                </p>
-                <button
-                  className="primary-button"
-                  onClick={() => {
-                    closeImport();
-                    setQuery("");
-                    setView("lifegraph");
-                  }}
-                >
-                  Review in LifeGraph
-                </button>
-              </div>
-            )}
-          </section>
-        </div>
-      )}
-
-      <div className={toast ? "toast visible" : "toast"} role="status">
-        {toast}
-      </div>
+      <div className={toast ? "mos-toast visible" : "mos-toast"} role="status">{toast}</div>
     </main>
   );
+
+  function renderImportModal() {
+    return (
+      <div className="mos-modal-backdrop" onMouseDown={closeImport}>
+        <section className="mos-modal" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}>
+          <button className="mos-modal-close" onClick={closeImport} aria-label="Close">×</button>
+          <span className="mos-kicker">Evidence import</span><h2 id="import-title">Add a document to your profile</h2>
+          <p>MeritOS groups related résumé bullets into candidate facts. Nothing becomes reusable until you verify it.</p>
+          {(importStage === "idle" || importStage === "error") && (
+            <label className="mos-drop-zone" onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
+              <input type="file" accept=".pdf,.docx,.txt" onChange={(event) => chooseFile(event.target.files?.[0])} />
+              <img src="/meritos-mark-v2.png" alt="" /><strong>Choose a PDF, DOCX, or TXT</strong><small>or drop it here · 12 MB maximum</small>
+            </label>
+          )}
+          {importStage === "selected" && selectedFile && <div className="mos-selected-file"><span>DOC</span><div><strong>{selectedFile.name}</strong><small>{Math.max(1, Math.round(selectedFile.size / 1024))} KB · ready</small></div><button className="mos-button dark" onClick={importDocument}>Extract facts</button></div>}
+          {importStage === "uploading" && <div className="mos-importing"><img src="/meritos-mark-v2.png" alt="" /><h3>Reading structure and grouping evidence…</h3><div><span /></div></div>}
+          {importStage === "done" && <div className="mos-import-done"><strong>Import complete</strong><p>{importMessage}</p><button className="mos-button dark" onClick={() => { closeImport(); goTo("review"); }}>Review extracted facts</button></div>}
+          {importStage === "error" && <ErrorMessage message={importMessage} />}
+        </section>
+      </div>
+    );
+  }
 }

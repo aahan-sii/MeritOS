@@ -88,7 +88,7 @@ function showLauncher(count) {
   host.id = "meritos-launcher-host";
   host.style.cssText = "position:fixed;right:20px;bottom:20px;z-index:2147483647";
   const root = host.attachShadow({ mode: "open" });
-  const logoUrl = chrome.runtime.getURL("meritos-mark.svg");
+  const logoUrl = chrome.runtime.getURL("meritos-mark-v2.png");
   root.innerHTML = `
     <style>
       .wrap{display:flex;align-items:center;gap:7px;font:600 13px/1.2 Inter,ui-sans-serif,system-ui;animation:arrive .42s cubic-bezier(.2,.78,.25,1)}

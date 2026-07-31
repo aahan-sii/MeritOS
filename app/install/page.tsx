@@ -1,14 +1,15 @@
 import Link from "next/link";
+/* eslint-disable @next/next/no-img-element */
 
 export default function InstallExtensionPage() {
   return (
     <main className="install-page">
       <nav className="install-nav">
-        <Link href="/" className="install-brand" aria-label="Back to MeritOS home"><img src="/meritos-mark.svg" alt="" /><span><strong>MeritOS</strong><small>Application intelligence</small></span></Link>
+        <Link href="/" className="install-brand" aria-label="Back to MeritOS home"><img src="/meritos-mark-v2.png" alt="" /><span><strong>MeritOS</strong><small>Application intelligence</small></span></Link>
         <Link className="text-button" href="/">Back to MeritOS</Link>
       </nav>
       <section className="install-hero">
-        <div className="install-mark"><img src="/meritos-mark.svg" alt="" /></div>
+        <div className="install-mark"><img src="/meritos-mark-v2.png" alt="" /></div>
         <span className="eyebrow">MeritOS for Chrome</span>
         <h1>Your application assistant, beside the form.</h1>
         <p>Install once, connect your verified MeritOS profile, then see an instant MeritOS prompt whenever Chrome detects an application form.</p>

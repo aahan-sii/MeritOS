@@ -15,6 +15,13 @@
       "when": 1785209375254,
       "tag": "0001_curly_bruce_banner",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785430800000,
+      "tag": "0002_profile_intelligence",
+      "breakpoints": true
     }
   ]
 }
