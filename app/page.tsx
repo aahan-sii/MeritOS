@@ -264,7 +264,16 @@ export default function Home() {
     );
     elements.forEach((element) => observer.observe(element));
     return () => observer.disconnect();
-  }, [view, claims.length, fit?.id, stories.length]);
+  }, [
+    view,
+    claims.length,
+    fit?.id,
+    stories.length,
+    isLoaded,
+    isSignedIn,
+    accountLoading,
+    profile.onboardingComplete,
+  ]);
 
   function announce(message: string) {
     setToast(message);
