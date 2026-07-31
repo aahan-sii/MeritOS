@@ -73,6 +73,8 @@ function renderFields() {
 }
 
 async function scan() {
+  $("scanStatus").textContent = "Scanning form...";
+  $("rescanButton").disabled = true;
   try {
     const result = await sendToPage({ type: "MERITOS_SCAN" });
     state.fields = result.fields;
@@ -81,10 +83,14 @@ async function scan() {
     $("pageTitle").textContent = result.title || "Application form";
     $("fillApproved").textContent = "Fill selected";
     renderFields();
+    $("scanStatus").textContent = `Found ${state.fields.length} editable field${state.fields.length === 1 ? "" : "s"}`;
   } catch {
     state.fields = [];
     renderFields();
     $("pageTitle").textContent = "Open a regular website to scan it";
+    $("scanStatus").textContent = "No supported form found on this page";
+  } finally {
+    $("rescanButton").disabled = false;
   }
 }
 

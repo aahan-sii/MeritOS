@@ -88,18 +88,19 @@ function showLauncher(count) {
   host.id = "meritos-launcher-host";
   host.style.cssText = "position:fixed;right:20px;bottom:20px;z-index:2147483647";
   const root = host.attachShadow({ mode: "open" });
+  const logoUrl = chrome.runtime.getURL("meritos-mark.svg");
   root.innerHTML = `
     <style>
-      .wrap{display:flex;align-items:center;gap:6px;font:600 13px/1.2 Inter,ui-sans-serif,system-ui}
-      .open{display:flex;align-items:center;gap:9px;padding:10px 13px 10px 10px;border:1px solid #8992ff66;border-radius:13px;background:#101426;color:#f7f8ff;box-shadow:0 14px 38px #090b1680;cursor:pointer}
-      .mark{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#6976ff,#926cff);font-weight:800}
-      small{display:block;margin-top:2px;color:#9ba2bb;font-size:10px;font-weight:500}
-      .close{width:26px;height:26px;padding:0;border:0;border-radius:50%;background:#101426;color:#8e95aa;cursor:pointer}
-      .open:focus-visible,.close:focus-visible{outline:3px solid #7984ff;outline-offset:2px}
+      .wrap{display:flex;align-items:center;gap:7px;font:600 13px/1.2 Inter,ui-sans-serif,system-ui;animation:arrive .42s cubic-bezier(.2,.78,.25,1)}
+      .open{display:flex;align-items:center;gap:10px;min-width:205px;padding:9px 13px 9px 9px;border:1px solid #a9d8bf99;border-radius:15px;background:linear-gradient(135deg,#123e34,#0d2c27);color:#f7fbf8;box-shadow:0 16px 44px #071b1780;cursor:pointer;text-align:left}
+      .mark{width:32px;height:32px;flex:none}
+      b{display:block;font-size:12px;letter-spacing:.01em}small{display:block;margin-top:3px;color:#b8d7c8;font-size:10px;font-weight:500}
+      .close{width:26px;height:26px;padding:0;border:0;border-radius:50%;background:#123e34;color:#b9d8c9;cursor:pointer}
+      .open:focus-visible,.close:focus-visible{outline:3px solid #e3bc69;outline-offset:2px}@keyframes arrive{from{transform:translateY(12px);opacity:0}to{transform:translateY(0);opacity:1}}
     </style>
     <div class="wrap">
       <button class="open" type="button" aria-label="Open MeritOS application assistant">
-        <span class="mark">M</span><span>Open MeritOS<small data-count>${count} fields</small></span>
+        <img class="mark" src="${logoUrl}" alt="" /><span><b>MeritOS is ready</b><small data-count>${count} fields detected · Open assistant</small></span>
       </button>
       <button class="close" type="button" aria-label="Hide MeritOS button">×</button>
     </div>`;

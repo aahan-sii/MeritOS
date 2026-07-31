@@ -170,9 +170,7 @@ function ProgressRing({ value, label }: { value: number; label: string }) {
 function Logo() {
   return (
     <div className="brand">
-      <div className="brand-mark" aria-hidden="true">
-        M
-      </div>
+      <img className="brand-mark" src="/meritos-mark.svg" alt="" />
       <div>
         <strong>MeritOS</strong>
         <span>Application intelligence</span>
@@ -483,7 +481,7 @@ export default function Home() {
           <span className="eyebrow">Your verified application profile</span>
           <h1>Upload your experience once.<br />Use it wherever you apply.</h1>
           <p>MeritOS turns your résumé into facts you control, then its Chrome side panel helps answer grant, scholarship, graduate, and job application forms.</p>
-          <SignUpButton mode="modal"><button className="primary-button large">Create your MeritOS profile</button></SignUpButton>
+          <div className="landing-actions"><SignUpButton mode="modal"><button className="primary-button large">Create your MeritOS profile</button></SignUpButton><a className="secondary-button large" href="/install">Get the Chrome extension</a></div>
           <div className="product-flow"><span>1 · Import résumé</span><span>2 · Verify facts</span><span>3 · Open any application</span><span>4 · Approve and fill</span></div>
         </section>
       </main>
@@ -651,14 +649,14 @@ export default function Home() {
             </section>
 
             <section className="extension-banner">
-              <div className="extension-visual" aria-hidden="true"><span>M</span><i /><i /><i /></div>
+              <div className="extension-visual" aria-hidden="true"><img src="/meritos-mark.svg" alt="" /><i /><i /><i /></div>
               <div>
                 <span className="eyebrow">Use MeritOS on application websites</span>
                 <h2>Install the Chrome side panel</h2>
                 <p>Open a grant or application form, click MeritOS, review detected questions, and fill only the answers you approve.</p>
                 {extensionToken && <code>{extensionToken}</code>}
               </div>
-              <button className="primary-button" onClick={createExtensionConnection}>{extensionToken ? "Copy new connection key" : "Connect Chrome extension"}</button>
+              <div className="extension-actions"><a className="secondary-button" href="/install">Install extension</a><button className="primary-button" onClick={createExtensionConnection}>{extensionToken ? "Copy new connection key" : "Connect Chrome extension"}</button></div>
             </section>
 
             <section className="guided-path" aria-labelledby="guided-path-title">

@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="sidepanel.css" />
   </head>
   <body>
-    <header><span class="mark">M</span><div><strong>MeritOS</strong><small>Application assistant</small></div><button id="settingsButton" title="Connection settings">•••</button></header>
+    <header><img class="mark" src="meritos-mark.svg" alt="MeritOS" /><div><strong>MeritOS</strong><small>Application assistant</small></div><button id="settingsButton" title="Connection settings">•••</button></header>
     <main>
       <section id="connection" class="card setup">
         <span class="eyebrow">Connect once</span>
@@ -19,7 +19,7 @@
         <p id="connectStatus" class="status"></p>
       </section>
       <section id="assistant" hidden>
-        <div class="page-context"><span class="pulse"></span><div><small>Reading this page</small><strong id="pageTitle">Application form</strong></div><button id="rescanButton">Rescan</button></div>
+        <div class="page-context"><span class="pulse"></span><div><small>Reading this page</small><strong id="pageTitle">Application form</strong><span id="scanStatus" class="scan-status" aria-live="polite"></span></div><button id="rescanButton">Rescan</button></div>
         <div class="summary"><strong id="fieldCount">0 fields</strong><span id="profileCount">0 verified facts</span></div>
         <div class="batch-actions"><button id="selectAll">Select all supported</button><button id="clearSelections">Clear</button></div>
         <div id="fields" class="fields"></div>

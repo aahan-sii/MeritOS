@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "MeritOS Application Assistant",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Read application forms, suggest evidence-backed answers, and fill only what you approve.",
   "permissions": ["sidePanel", "storage", "activeTab"],
   "host_permissions": ["http://localhost:3000/*", "https://*/*"],
   "background": { "service_worker": "background.js" },
-  "action": { "default_title": "Open MeritOS" },
+  "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
+  "action": { "default_title": "Open MeritOS", "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png" } },
   "side_panel": { "default_path": "sidepanel.html" },
   "content_scripts": [
     {
