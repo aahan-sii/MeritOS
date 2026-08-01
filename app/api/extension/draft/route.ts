@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
-import { createGroundedDraft, type DraftField } from "@/lib/ai-drafting";
+import { createGroundedDraftBatch, type DraftField } from "@/lib/ai-drafting";
 import { claims } from "@/db/schema";
 import { extensionCorsHeaders, requireExtensionConnection } from "../_lib";
 
@@ -21,6 +21,13 @@ function fieldFrom(value: unknown): DraftField | null {
     type: typeof candidate.type === "string" ? candidate.type.slice(0, 80) : undefined,
     name: typeof candidate.name === "string" ? candidate.name.slice(0, 160) : undefined,
     maxLength: typeof candidate.maxLength === "number" ? candidate.maxLength : undefined,
+    control: typeof candidate.control === "string" ? candidate.control.slice(0, 40) : undefined,
+    options: Array.isArray(candidate.options) ? candidate.options.slice(0, 40).map((option) => {
+      if (typeof option === "string") return option.slice(0, 180);
+      if (!option || typeof option !== "object") return "";
+      const value = option as Record<string, unknown>;
+      return { label: typeof value.label === "string" ? value.label.slice(0, 180) : "", value: typeof value.value === "string" ? value.value.slice(0, 180) : "" };
+    }).filter(Boolean) : undefined,
   };
 }
 
@@ -31,26 +38,25 @@ export async function POST(request: NextRequest) {
   }
   try {
     const body = await request.json();
-    const field = fieldFrom(body?.field);
-    if (!field) {
-      return NextResponse.json({ error: "A valid application field is required." }, { status: 400, headers: extensionCorsHeaders });
-    }
+    const rawFields: unknown[] = Array.isArray(body?.fields) ? body.fields : [body?.field];
+    const fields = rawFields.map(fieldFrom).filter((field): field is DraftField => Boolean(field)).slice(0, 20);
+    if (!fields.length) return NextResponse.json({ error: "At least one valid application field is required." }, { status: 400, headers: extensionCorsHeaders });
     const page = body?.page && typeof body.page === "object" ? body.page as Record<string, unknown> : {};
     const rows = await connection.db
       .select({ id: claims.id, category: claims.category, statement: claims.statement })
       .from(claims)
       .where(and(eq(claims.userEmail, connection.connection.userEmail), eq(claims.status, "verified")))
       .orderBy(desc(claims.updatedAt))
-      .limit(12);
-    const result = await createGroundedDraft({
-      field,
+      .limit(60);
+    const results = await createGroundedDraftBatch({
+      fields,
       page: {
         title: typeof page.title === "string" ? page.title.slice(0, 300) : "",
         url: typeof page.url === "string" ? page.url.slice(0, 1_000) : "",
       },
       evidence: rows,
     });
-    return NextResponse.json(result, { headers: extensionCorsHeaders });
+    return NextResponse.json(Array.isArray(body?.fields) ? { results } : results[0], { headers: extensionCorsHeaders });
   } catch (error) {
     console.error("MeritOS draft error", error);
     return NextResponse.json({ error: "MeritOS could not create a draft right now. Your application was not changed." }, { status: 500, headers: extensionCorsHeaders });

@@ -32,6 +32,18 @@ export async function GET(request: NextRequest) {
     .from(profiles)
     .where(eq(profiles.email, connection.connection.userEmail))
     .limit(1);
+  const coverageAreas = [
+    ["Contact details", /contact|phone|mobile|telephone|email/i],
+    ["Links & profiles", /linkedin|github|portfolio|website|https?:\/\//i],
+    ["Education", /education|academic|school|coursework|degree|gpa/i],
+    ["Experience", /experience|employment|intern|work|research/i],
+    ["Projects & impact", /project|impact|portfolio|built|developed/i],
+    ["Leadership", /leadership|led|founded|president|captain|mentor/i],
+    ["Awards", /award|distinction|honou?r|recognition|achievement/i],
+    ["Community", /community|service|volunteer|outreach/i],
+    ["Motivation & goals", /motivation|goal|interest|why|aspiration/i],
+  ] as const;
+  const coverage = coverageAreas.map(([name, pattern]) => ({ name, ready: rows.some((row) => pattern.test(`${row.category} ${row.statement}`)) }));
   return NextResponse.json(
     {
       profile: {
@@ -44,6 +56,7 @@ export async function GET(request: NextRequest) {
           ...row,
           evidence: JSON.parse(row.evidence),
         })),
+        coverage,
       },
     },
     { headers: extensionCorsHeaders },

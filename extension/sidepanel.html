@@ -1,33 +1,25 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>MeritOS</title>
-    <link rel="stylesheet" href="sidepanel.css" />
-  </head>
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MeritOS</title><link rel="stylesheet" href="sidepanel.css"></head>
   <body>
-    <header><img class="mark" src="meritos-mark-v2.png" alt="MeritOS" /><div><strong>MeritOS</strong><small>Application assistant</small></div><button id="settingsButton" title="Connection settings">•••</button></header>
+    <header class="app-header"><div class="brand"><img class="mark" src="meritos-mark-v2.png" alt=""><span><strong>MeritOS</strong><small>Evidence-backed autofill</small></span></div><button id="settingsButton" class="icon-button" title="Connection settings" aria-label="Connection settings">Settings</button></header>
     <main>
-      <section id="connection" class="card setup">
-        <span class="eyebrow">Connect once</span>
-        <h1>Use your verified profile</h1>
-        <p>In MeritOS, choose “Connect Chrome extension,” then paste the connection key here.</p>
-        <label>MeritOS website<input id="baseUrl" value="http://localhost:3000" /></label>
-        <label>Connection key<input id="token" type="password" placeholder="merit_…" /></label>
-        <button id="connectButton" class="primary">Connect profile</button>
-        <p id="connectStatus" class="status"></p>
+      <section id="connection" class="setup-card">
+        <span class="eyebrow">One-time setup</span><h1>Connect your verified profile</h1><p>Copy the connection key from MeritOS, then paste it below. It stays only in this browser.</p>
+        <label>MeritOS website<input id="baseUrl" value="https://merit-os-jflo.vercel.app" inputmode="url"></label>
+        <label>Connection key<input id="token" type="password" placeholder="merit_…"></label>
+        <button id="connectButton" class="primary wide">Connect profile</button><p id="connectStatus" class="status" aria-live="polite"></p>
       </section>
       <section id="assistant" hidden>
-        <div class="page-context"><span class="pulse"></span><div><small>Reading this page</small><strong id="pageTitle">Application form</strong><span id="scanStatus" class="scan-status" aria-live="polite"></span></div><button id="rescanButton">Rescan</button></div>
-        <div class="summary"><strong id="fieldCount">0 fields</strong><span id="profileCount">0 verified facts</span></div>
-        <div class="batch-actions"><button id="selectAll">Select all supported</button><button id="clearSelections">Clear</button></div>
+        <div class="page-context"><span class="pulse" aria-hidden="true"></span><div><small>Application detected</small><strong id="pageTitle">Application form</strong><span id="scanStatus" class="scan-status" aria-live="polite"></span></div><button id="rescanButton" class="secondary">Rescan</button></div>
+        <section class="summary-card"><div><strong id="fieldCount">0</strong><span>questions</span></div><div><strong id="supportedCount">0</strong><span>ready</span></div><div><strong id="missingCount">0</strong><span>need context</span></div></section>
+        <div class="smart-actions"><div><strong>Improve every missing answer</strong><small>One grounded AI pass for this form</small></div><button id="analyzeMissing" class="primary">Analyze form</button></div>
+        <div class="list-toolbar"><span id="profileCount">0 verified facts</span><div><button id="selectAll" class="text-button">Select ready</button><button id="clearSelections" class="text-button">Clear</button></div></div>
         <div id="fields" class="fields"></div>
+        <p class="safety">MeritOS never presses Submit. Always review answers on the original page.</p>
         <div class="bottom-bar"><span><strong id="approvedCount">0</strong> selected</span><button id="fillApproved" class="primary" disabled>Fill selected</button></div>
-        <p class="safety">MeritOS never presses Submit. Review every filled answer on the original page.</p>
       </section>
     </main>
-    <script src="intelligence.js"></script>
-    <script src="sidepanel.js"></script>
+    <script src="form-core.js"></script><script src="intelligence.js"></script><script src="sidepanel.js"></script>
   </body>
 </html>

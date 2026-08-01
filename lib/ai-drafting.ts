@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { buildDraftingPrompt, canDraftField, cleanDraftingText, needsPersonalInput, normalizedMaxLength, selectRelevantEvidence } from "./ai-drafting-core";
+import { canDraftField, cleanDraftingText, needsPersonalInput, normalizedMaxLength, selectRelevantEvidence } from "./ai-drafting-core";
 
 export { buildDraftingPrompt, canDraftField, needsPersonalInput, normalizedMaxLength, selectRelevantEvidence } from "./ai-drafting-core";
 
@@ -10,6 +10,8 @@ export type DraftField = {
   type?: string;
   name?: string;
   maxLength?: number;
+  control?: string;
+  options?: Array<{ label?: string; value?: string } | string>;
 };
 
 export type DraftEvidence = {
@@ -29,79 +31,117 @@ export type DraftResult =
   | { status: "needs_input"; draft: ""; usedEvidenceIds: string[]; questions: string[] }
   | { status: "not_configured"; draft: ""; usedEvidenceIds: string[]; questions: string[] };
 
+type DraftBatchRequest = {
+  fields: DraftField[];
+  page?: { title?: string; url?: string };
+  evidence: DraftEvidence[];
+};
+
 function needsInput(question: string): DraftResult {
   return { status: "needs_input", draft: "", usedEvidenceIds: [], questions: [question] };
 }
 
 export async function createGroundedDraft(request: DraftRequest): Promise<DraftResult> {
-  if (needsPersonalInput(request.field)) {
-    return needsInput("Why does this specific opportunity matter to you? Add your own reason in MeritOS before drafting this answer.");
-  }
-  if (!canDraftField(request.field)) {
-    return needsInput("MeritOS needs a clearer application question or more matching verified evidence before it can draft this safely.");
-  }
-  if (!request.evidence.length) {
-    return needsInput("Verify at least one relevant profile fact before asking MeritOS to draft this answer.");
-  }
+  const results = await createGroundedDraftBatch({ fields: [request.field], page: request.page, evidence: request.evidence });
+  return results[0] || needsInput("MeritOS could not analyze this field safely.");
+}
+
+export async function createGroundedDraftBatch(request: DraftBatchRequest): Promise<DraftResult[]> {
+  type PreparedField = { field: DraftField; immediate?: DraftResult; evidence?: DraftEvidence[] };
+  const prepared: PreparedField[] = request.fields.map((field): PreparedField => {
+    if (needsPersonalInput(field)) return { field, immediate: needsInput("Why does this specific opportunity matter to you? Add your own reason in MeritOS before drafting this answer.") };
+    if (!canDraftField(field)) return { field, immediate: needsInput("This field needs application-specific or sensitive information that MeritOS will not guess.") };
+    const evidence = selectRelevantEvidence(field, request.evidence);
+    if (!evidence.length) return { field, immediate: needsInput("No matching verified evidence was found for this question. Add or verify a relevant fact first.") };
+    return { field, evidence };
+  });
+  const eligible = prepared.filter((item): item is PreparedField & { evidence: DraftEvidence[] } => Boolean(item.evidence));
+  if (!eligible.length) return prepared.map((item) => item.immediate || needsInput("More verified context is required."));
   if (!process.env.OPENAI_API_KEY) {
-    return {
-      status: "not_configured",
-      draft: "",
-      usedEvidenceIds: [],
-      questions: ["AI drafting is not configured yet. Add OPENAI_API_KEY in Vercel, then redeploy."],
-    };
+    return prepared.map((item) => item.immediate || ({ status: "not_configured", draft: "", usedEvidenceIds: [], questions: ["AI drafting is not configured yet. Add OPENAI_API_KEY in Vercel, then redeploy."] }));
   }
 
-  const relevantEvidence = selectRelevantEvidence(request.field, request.evidence);
-  if (!relevantEvidence.length) {
-    return needsInput("No matching verified evidence was found for this question. Add or verify a relevant fact first.");
-  }
-  const prompt = buildDraftingPrompt({ ...request, evidence: relevantEvidence });
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const response = await client.responses.create({
-    model: process.env.OPENAI_MODEL || "gpt-5.6-terra",
+    model: process.env.OPENAI_DRAFT_MODEL || process.env.OPENAI_MODEL || "gpt-5.6-sol",
+    reasoning: { effort: "low" },
     input: [
-      { role: "developer", content: prompt.developer },
-      { role: "user", content: prompt.user },
+      {
+        role: "developer",
+        content: [
+          "You are MeritOS, an evidence-bound application field analyst.",
+          "Analyze every supplied field independently. Use only its supplied verifiedEvidence.",
+          "Never transfer identity/contact information into a field about a teacher, recommender, reference, supervisor, parent, guardian, or other third party.",
+          "Never invent or infer credentials, grades, dates, metrics, motivations, eligibility, consent, demographics, legal status, or work authorization.",
+          "For narrative fields, answer directly in a concise first-person voice while preserving evidence meaning.",
+          "For radio, checkbox, or select fields, draft must exactly equal one supplied option label and only when evidence directly supports it.",
+          "If support is incomplete, return needs_input with one specific question. Return one result for every fieldId and only JSON matching the schema.",
+        ].join(" "),
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          page: request.page || {},
+          fields: eligible.map(({ field, evidence }) => ({
+            fieldId: field.id || field.label,
+            label: cleanDraftingText(field.label, 500),
+            type: cleanDraftingText(field.type, 80),
+            control: cleanDraftingText(field.control, 40),
+            maxCharacters: normalizedMaxLength(field),
+            options: Array.isArray(field.options) ? field.options.slice(0, 40).map((option) => cleanDraftingText(typeof option === "string" ? option : option.label || option.value, 180)) : [],
+            verifiedEvidence: evidence.map((item) => ({ id: item.id, category: item.category, statement: item.statement })),
+          })),
+        }),
+      },
     ],
     text: {
       format: {
         type: "json_schema",
-        name: "meritos_grounded_draft",
+        name: "meritos_grounded_field_batch",
         strict: true,
         schema: {
           type: "object",
           additionalProperties: false,
-          required: ["status", "draft", "usedEvidenceIds", "questions"],
+          required: ["items"],
           properties: {
-            status: { type: "string", enum: ["draft", "needs_input"] },
-            draft: { type: "string" },
-            usedEvidenceIds: { type: "array", items: { type: "string" } },
-            questions: { type: "array", items: { type: "string" } },
+            items: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["fieldId", "status", "draft", "usedEvidenceIds", "questions"],
+                properties: {
+                  fieldId: { type: "string" }, status: { type: "string", enum: ["draft", "needs_input"] }, draft: { type: "string" },
+                  usedEvidenceIds: { type: "array", items: { type: "string" } }, questions: { type: "array", items: { type: "string" } },
+                },
+              },
+            },
           },
         },
       },
     },
   });
-
-  let parsed: { status?: string; draft?: string; usedEvidenceIds?: unknown; questions?: unknown };
-  try {
-    parsed = JSON.parse(response.output_text);
-  } catch {
-    throw new Error("The drafting service returned an invalid response.");
-  }
-
-  const validIds = new Set(relevantEvidence.map((item: DraftEvidence) => item.id));
-  const usedEvidenceIds = Array.isArray(parsed.usedEvidenceIds)
-    ? parsed.usedEvidenceIds.filter((item): item is string => typeof item === "string" && validIds.has(item))
-    : [];
-  const questions = Array.isArray(parsed.questions)
-    ? parsed.questions.map((item) => cleanDraftingText(item, 300)).filter(Boolean).slice(0, 2)
-    : [];
-  const draft = cleanDraftingText(parsed.draft, normalizedMaxLength(request.field));
-
-  if (parsed.status !== "draft" || !draft || !usedEvidenceIds.length) {
-    return needsInput(questions[0] || "The verified evidence does not yet support a truthful answer to this question.");
-  }
-  return { status: "draft", draft, usedEvidenceIds, questions: [] };
+  let payload: { items?: Array<{ fieldId?: string; status?: string; draft?: string; usedEvidenceIds?: unknown; questions?: unknown }> };
+  try { payload = JSON.parse(response.output_text); } catch { throw new Error("The drafting service returned an invalid response."); }
+  const byId = new Map((payload.items || []).map((item) => [String(item.fieldId), item]));
+  return prepared.map((item) => {
+    if (item.immediate) return item.immediate;
+    const fieldId = item.field.id || item.field.label;
+    const parsed = byId.get(fieldId);
+    const evidence = item.evidence || [];
+    const validIds = new Set(evidence.map((entry) => entry.id));
+    const usedEvidenceIds = Array.isArray(parsed?.usedEvidenceIds) ? parsed.usedEvidenceIds.filter((id): id is string => typeof id === "string" && validIds.has(id)) : [];
+    const questions = Array.isArray(parsed?.questions) ? parsed.questions.map((question) => cleanDraftingText(question, 300)).filter(Boolean).slice(0, 2) : [];
+    let draft = cleanDraftingText(parsed?.draft, normalizedMaxLength(item.field));
+    if (Array.isArray(item.field.options) && item.field.options.length && draft) {
+      const option = item.field.options.find((candidate) => {
+        const label = typeof candidate === "string" ? candidate : candidate.label || candidate.value || "";
+        return label.toLowerCase().trim() === draft.toLowerCase().trim();
+      });
+      draft = option ? (typeof option === "string" ? option : option.label || option.value || "") : "";
+    }
+    return parsed?.status === "draft" && draft && usedEvidenceIds.length
+      ? { status: "draft", draft, usedEvidenceIds, questions: [] }
+      : needsInput(questions[0] || "The verified evidence does not yet support a truthful answer to this question.");
+  });
 }

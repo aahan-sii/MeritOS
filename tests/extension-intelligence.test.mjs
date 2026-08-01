@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+await import("../extension/form-core.js");
 await import("../extension/intelligence.js");
 
 const intelligence = globalThis.MeritOSIntelligence;
@@ -19,6 +20,18 @@ const field = (label, type = "textarea") => ({ id: label, label, type, kind: typ
 test("matches account identity fields directly", () => {
   assert.equal(intelligence.suggest(field("Full name", "text"), claims, identity).text, "Aahan Singh");
   assert.equal(intelligence.suggest(field("Email address", "email"), claims, identity).text, "aahan@example.com");
+});
+
+test("never substitutes applicant contact details for another person", () => {
+  const teacher = intelligence.suggest(field("Teacher email address", "email"), claims, identity);
+  assert.equal(teacher.text, "");
+  assert.equal(teacher.intent, "third_party_email");
+  assert.match(teacher.source, /someone else/i);
+});
+
+test("matches supported radio and select options exactly", () => {
+  const optionField = { ...field("Current school", "select"), options: [{ label: "American Leadership Academy", value: "ala" }, { label: "Other", value: "other" }] };
+  assert.equal(intelligence.suggest(optionField, claims, identity).text, "American Leadership Academy");
 });
 
 test("chooses a real institution over coursework", () => {

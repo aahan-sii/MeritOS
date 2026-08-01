@@ -98,7 +98,8 @@ export async function extractDocumentFacts(text: string, filename: string): Prom
 
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const response = await client.responses.create({
-    model: process.env.OPENAI_EXTRACTION_MODEL || process.env.OPENAI_MODEL || "gpt-5.6-terra",
+    model: process.env.OPENAI_EXTRACTION_MODEL || process.env.OPENAI_MODEL || "gpt-5.6-sol",
+    reasoning: { effort: "low" },
     input: [
       {
         role: "developer",

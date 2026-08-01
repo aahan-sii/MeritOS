@@ -83,7 +83,8 @@ async function structuredResponse<T>(
   user: string,
 ) {
   const response = await openAI().responses.create({
-    model: process.env.OPENAI_MODEL || "gpt-5.6-terra",
+    model: process.env.OPENAI_PROFILE_MODEL || process.env.OPENAI_MODEL || "gpt-5.6-sol",
+    reasoning: { effort: "low" },
     input: [
       { role: "developer", content: developer },
       { role: "user", content: user },

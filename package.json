@@ -9,7 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "npm run build && node --experimental-strip-types --test tests/rendered-html.test.mjs tests/resume-intelligence.test.mjs tests/extension-intelligence.test.mjs tests/ai-drafting.test.mjs tests/document-facts.test.mjs tests/profile-intelligence.test.mjs",
+    "test": "npm run build && node --experimental-strip-types --test tests/rendered-html.test.mjs tests/resume-intelligence.test.mjs tests/form-core.test.mjs tests/extension-intelligence.test.mjs tests/ai-drafting.test.mjs tests/document-facts.test.mjs tests/profile-intelligence.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/migrate-db.mjs"

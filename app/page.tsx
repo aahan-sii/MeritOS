@@ -92,6 +92,8 @@ const storyFocuses = [
 ];
 const storyDepths = ["Compact", "Standard", "Detailed"];
 const coverageAreas = [
+  { name: "Contact details", pattern: /contact|phone|mobile|telephone|email/i },
+  { name: "Links & profiles", pattern: /linkedin|github|portfolio|website|https?:\/\//i },
   { name: "Education", pattern: /education|academic|school|coursework|degree|gpa/i },
   { name: "Experience", pattern: /experience|employment|intern|work|research/i },
   { name: "Projects & impact", pattern: /project|impact|portfolio|built|developed/i },
@@ -100,6 +102,7 @@ const coverageAreas = [
   { name: "Community", pattern: /community|service|volunteer|outreach/i },
   { name: "Skills", pattern: /skill|technical|language|tool|certif/i },
   { name: "Motivation & goals", pattern: /motivation|goal|interest|why|aspiration/i },
+  { name: "Preferences & availability", pattern: /availability|location preference|work preference|start date|schedule/i },
 ];
 
 const navigation: Array<{ id: View; label: string; index: string }> = [
@@ -657,6 +660,10 @@ export default function Home() {
             <span><b>2</b><span><strong>Verify extracted facts</strong><small>{verifiedClaims.length} of {claims.length} currently approved.</small></span></span>
             <span className="mos-pill">{claims.length ? "Review below" : "Waiting for upload"}</span>
           </div>
+          <div className="mos-setup-row">
+            <span><b>3</b><span><strong>Add what your résumé misses</strong><small>Links, contact details, goals, preferences, and availability improve form accuracy.</small></span></span>
+            <div className="mos-action-row"><button className="mos-button light" onClick={() => openFactForm("Links & profiles", "Paste your LinkedIn, GitHub, portfolio, or personal website URL. Add a short note describing what it contains.")}>Add a link</button><button className="mos-button light" onClick={() => openFactForm("Contact details")}>Add contact</button></div>
+          </div>
           {claims.length > 0 && (
             <div className="mos-onboarding-claims">
               {claims.map((claim) => (
@@ -782,7 +789,7 @@ export default function Home() {
           <div className="mos-page">
             <section className="mos-page-intro" data-reveal>
               <div><span className="mos-kicker">Your source of truth</span><h2>Build the fullest truthful picture of you.</h2><p>Documents provide evidence. Direct context captures goals, motivations, preferences, and details that never make it onto a résumé.</p></div>
-              <div className="mos-action-row"><button className="mos-button light" onClick={() => openFactForm()}>Add context manually</button><button className="mos-button dark" onClick={() => setShowImport(true)}>Upload a document</button></div>
+              <div className="mos-action-row"><button className="mos-button light" onClick={() => openFactForm("Links & profiles", "Paste your LinkedIn, GitHub, portfolio, or personal website URL. Add a short note describing what it contains.")}>Add link</button><button className="mos-button light" onClick={() => openFactForm()}>Add context</button><button className="mos-button dark" onClick={() => setShowImport(true)}>Upload document</button></div>
             </section>
             <section className="mos-coverage-grid" data-reveal>
               {coverageAreas.map((area) => {
@@ -968,7 +975,7 @@ export default function Home() {
             <button className="mos-modal-close" onClick={() => setShowFactForm(false)} aria-label="Close">×</button>
             <span className="mos-kicker">Applicant-confirmed context</span><h2 id="fact-title">Add something MeritOS should know</h2>
             {factPrompt && <blockquote>{factPrompt}</blockquote>}
-            <label>Context area<select value={factCategory} onChange={(event) => setFactCategory(event.target.value)}>{[...coverageAreas.map((area) => area.name), "Research", "Professional experience", "Story context", "Other"].map((category) => <option key={category}>{category}</option>)}</select></label>
+            <label>Context area<select value={factCategory} onChange={(event) => setFactCategory(event.target.value)}>{[...coverageAreas.map((area) => area.name), "Research", "Professional experience", "Reference context", "Story context", "Other"].map((category) => <option key={category}>{category}</option>)}</select></label>
             <label>Your truthful answer<textarea autoFocus value={factStatement} onChange={(event) => setFactStatement(event.target.value)} placeholder="Write this in your own words. Include exact dates, outcomes, or motivation when relevant." /></label>
             <p className="mos-fine-print">You are marking this as applicant-confirmed. MeritOS may use it for matching questions, drafting, and interview practice.</p>
             <button className="mos-button dark large full" disabled={!factStatement.trim() || busy === "fact"} onClick={saveFact}>{busy === "fact" ? "Saving…" : "Save as verified context"}</button>
