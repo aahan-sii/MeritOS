@@ -1,7 +1,7 @@
 import OpenAI from "openai";
-import { canDraftField, cleanDraftingText, needsPersonalInput, normalizedMaxLength, selectRelevantEvidence } from "./ai-drafting-core";
+import { canDraftField, cleanDraftingText, dedupeDraftText, needsPersonalInput, normalizedMaxLength, selectRelevantEvidence } from "./ai-drafting-core";
 
-export { buildDraftingPrompt, canDraftField, needsPersonalInput, normalizedMaxLength, selectRelevantEvidence } from "./ai-drafting-core";
+export { buildDraftingPrompt, canDraftField, dedupeDraftText, dedupeEvidence, needsPersonalInput, normalizedMaxLength, selectRelevantEvidence, textSimilarity } from "./ai-drafting-core";
 
 export type DraftField = {
   id?: string;
@@ -62,6 +62,8 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
   }
 
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const evidenceCatalog = new Map<string, DraftEvidence>();
+  eligible.forEach((item) => item.evidence.forEach((evidence) => evidenceCatalog.set(evidence.id, evidence)));
   const response = await client.responses.create({
     model: process.env.OPENAI_DRAFT_MODEL || process.env.OPENAI_MODEL || "gpt-5.6-sol",
     reasoning: { effort: "low" },
@@ -70,10 +72,11 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
         role: "developer",
         content: [
           "You are MeritOS, an evidence-bound application field analyst.",
-          "Analyze every supplied field independently. Use only its supplied verifiedEvidence.",
+          "Analyze every supplied field independently. The evidence catalog is shared across the form; for each field, use only evidence IDs listed in that field's allowedEvidenceIds.",
           "Never transfer identity/contact information into a field about a teacher, recommender, reference, supervisor, parent, guardian, or other third party.",
           "Never invent or infer credentials, grades, dates, metrics, motivations, eligibility, consent, demographics, legal status, or work authorization.",
           "For narrative fields, answer directly in a concise first-person voice while preserving evidence meaning.",
+          "Write one cohesive answer and remove semantic repetition. Never restate the same role, metric, action, or outcome in a second sentence. Use bullets only when the field explicitly requests a list.",
           "For radio, checkbox, or select fields, draft must exactly equal one supplied option label and only when evidence directly supports it.",
           "If support is incomplete, return needs_input with one specific question. Return one result for every fieldId and only JSON matching the schema.",
         ].join(" "),
@@ -82,6 +85,7 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
         role: "user",
         content: JSON.stringify({
           page: request.page || {},
+          verifiedEvidence: [...evidenceCatalog.values()].map((item) => ({ id: item.id, category: item.category, statement: item.statement })),
           fields: eligible.map(({ field, evidence }) => ({
             fieldId: field.id || field.label,
             label: cleanDraftingText(field.label, 500),
@@ -89,7 +93,7 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
             control: cleanDraftingText(field.control, 40),
             maxCharacters: normalizedMaxLength(field),
             options: Array.isArray(field.options) ? field.options.slice(0, 40).map((option) => cleanDraftingText(typeof option === "string" ? option : option.label || option.value, 180)) : [],
-            verifiedEvidence: evidence.map((item) => ({ id: item.id, category: item.category, statement: item.statement })),
+            allowedEvidenceIds: evidence.map((item) => item.id),
           })),
         }),
       },
@@ -132,7 +136,7 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
     const validIds = new Set(evidence.map((entry) => entry.id));
     const usedEvidenceIds = Array.isArray(parsed?.usedEvidenceIds) ? parsed.usedEvidenceIds.filter((id): id is string => typeof id === "string" && validIds.has(id)) : [];
     const questions = Array.isArray(parsed?.questions) ? parsed.questions.map((question) => cleanDraftingText(question, 300)).filter(Boolean).slice(0, 2) : [];
-    let draft = cleanDraftingText(parsed?.draft, normalizedMaxLength(item.field));
+    let draft = dedupeDraftText(parsed?.draft, normalizedMaxLength(item.field));
     if (Array.isArray(item.field.options) && item.field.options.length && draft) {
       const option = item.field.options.find((candidate) => {
         const label = typeof candidate === "string" ? candidate : candidate.label || candidate.value || "";

@@ -20,7 +20,12 @@
     if (/\b(personal website|portfolio(?: url| link)?|website(?: url| link)?|homepage|github(?: url| profile| link)?)\b/.test(value)) return "website";
     if (/\b(phone|telephone|mobile|cell number)\b/.test(value)) return "phone";
     if (field.type === "email" || /\b(your e-?mail|applicant e-?mail|primary e-?mail|email address)\b/.test(value)) return "email";
+    if (/\b(first|given) name\b/.test(value)) return "first_name";
+    if (/\b(last|family|surname) name\b/.test(value)) return "last_name";
     if (/\b(full name|legal name|applicant name|your name|preferred name)\b/.test(value)) return "name";
+    if (/\b(work authori[sz]ation|legally authorized|visa sponsorship|citizenship status)\b/.test(value)) return "legal_status";
+    if (/\b(consent|permission|agree to|authorize contact|may we contact)\b/.test(value)) return "consent";
+    if (/\b(gender|race|ethnicity|disability|veteran status|sexual orientation|date of birth|birth date)\b/.test(value)) return "sensitive_demographic";
     if (/\b(school|institution|university|college|organization|organisation|employer)\b/.test(value)) return "institution";
     if (/\b(why.*apply|why.*fellowship|motivation|motivated|interest in this|personal statement|statement of purpose)\b/.test(value)) return "motivation";
     if (/\b(research|laboratory|experiment|publication|academic investigation)\b/.test(value)) return "research";
@@ -62,7 +67,13 @@
   }
 
   function selectEvidence(intent, claims) {
-    return claims.map((claim) => ({ claim, type: claimIntent(claim) })).filter((item) => item.type === intent).slice(0, narrativeIntents.has(intent) ? 2 : 1);
+    const matches = claims.map((claim) => ({ claim, type: claimIntent(claim) })).filter((item) => item.type === intent);
+    if (!narrativeIntents.has(intent)) return matches.slice(0, 1);
+    return matches
+      .map((item) => ({ item, score: (String(item.claim.statement || "").match(/\b\d[\d,.%$-]*/g) || []).length * 4 + Math.min(String(item.claim.statement || "").length, 500) / 100 }))
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 1)
+      .map(({ item }) => item);
   }
 
   function safeText(items, field, intent) {
@@ -70,7 +81,7 @@
     const facts = items.map((item) => String(item.claim.statement || "").trim()).filter(Boolean);
     if (!facts.length) return "";
     if (!narrativeIntents.has(intent)) return facts[0].slice(0, limit);
-    return facts.map((fact) => `• ${fact}`).join("\n").slice(0, limit);
+    return facts[0].slice(0, limit);
   }
 
   function extractUrl(claims, pattern) {
@@ -105,7 +116,11 @@
     if (["third_party_email", "third_party_name", "third_party_phone"].includes(intent)) {
       return missing("This asks for someone else’s contact information. Add that person as application-specific context; MeritOS will never substitute your details.", intent);
     }
-    if (intent === "name") return identity.displayName ? { text: fitToOptions(identity.displayName, field), source: "Account profile · verified identity", intent, kind: "identity" } : missing("Add your name in MeritOS profile settings", intent);
+    if (["name", "first_name", "last_name"].includes(intent)) {
+      const parts = String(identity.displayName || "").trim().split(/\s+/).filter(Boolean);
+      const name = intent === "first_name" ? parts[0] : intent === "last_name" ? parts.slice(1).join(" ") : identity.displayName;
+      return name ? { text: fitToOptions(name, field), source: "Account profile · verified identity", intent, kind: "identity" } : missing("Add your full name in MeritOS profile settings", intent);
+    }
     if (intent === "email") return identity.email ? { text: fitToOptions(identity.email, field), source: "Account profile · verified email", intent, kind: "identity" } : missing("No verified account email is available", intent);
     if (intent === "phone") {
       const phone = extractPhone(claims);
@@ -121,9 +136,13 @@
     }
     if (intent === "institution") {
       const institution = bestInstitution(claims);
-      const text = institution ? fitToOptions(institution.statement.slice(0, field.maxLength || 500), field) : "";
+      const conciseInstitution = institution ? String(institution.statement).split(/\s*(?:\||—|–)\s*/)[0].trim() : "";
+      const text = conciseInstitution ? fitToOptions(conciseInstitution.slice(0, field.maxLength || 500), field) : "";
       return text ? { text, source: "Verified education evidence", intent, kind: "evidence" } : missing("No matching school or institution was found in verified evidence", intent);
     }
+    if (intent === "legal_status") return missing("Legal or work-authorization answers require your explicit application-specific confirmation", intent);
+    if (intent === "consent") return missing("Consent choices always require your direct selection", intent);
+    if (intent === "sensitive_demographic") return missing("Sensitive demographic information is never inferred or autofilled", intent);
     if (intent === "motivation") return missing("Needs your input — a résumé cannot establish why you want this specific opportunity", intent);
     if (intent === "unknown") return missing("MeritOS cannot confidently identify what this question is asking. Add context or answer manually.", intent);
     const items = selectEvidence(intent, claims);

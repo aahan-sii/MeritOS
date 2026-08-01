@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "MeritOS Application Assistant",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Read application forms, suggest evidence-backed answers, and fill only what you approve.",
-  "permissions": ["sidePanel", "storage", "activeTab"],
+  "permissions": ["sidePanel", "storage", "activeTab", "tabs"],
   "host_permissions": ["http://localhost:3000/*", "https://*/*"],
   "background": { "service_worker": "background.js" },
   "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },

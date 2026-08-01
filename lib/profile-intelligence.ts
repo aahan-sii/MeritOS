@@ -36,6 +36,8 @@ export type GeneratedStory = {
   missingQuestions: string[];
 };
 
+const STORY_LENSES = ["Leadership", "Research", "Community impact", "Resilience", "Academic curiosity", "Entrepreneurship"] as const;
+
 export type InterviewQuestion = {
   id: string;
   type: "fit" | "behavioral" | "technical" | "evidence" | "challenge";
@@ -235,7 +237,7 @@ export async function createStory(input: {
       ],
       properties: {
         title: { type: "string" },
-        lens: { type: "string" },
+        lens: { type: "string", enum: STORY_LENSES },
         situation: { type: "string" },
         action: { type: "string" },
         result: { type: "string" },
@@ -247,11 +249,14 @@ export async function createStory(input: {
     `You are MeritOS Story Studio. Build a reusable Situation-Action-Result-Reflection story scaffold from verified evidence only.
 Never invent chronology, metrics, emotions, obstacles, results, or motivations. If evidence is absent, keep that section brief and ask a targeted question.
 Preserve concrete language. This is an editable scaffold, not a submission-ready essay.
+When LENS is "Auto-select from target", choose exactly one allowed lens by weighing target relevance, evidence specificity, and whether the evidence supports all four story sections. Do not default to Leadership. Prefer Community impact when service or outreach evidence is stronger or more relevant, and Research when investigation evidence is stronger or more relevant.
+When the applicant explicitly chooses a lens, use it only if the evidence supports it; otherwise ask for missing context instead of forcing unrelated evidence.
 Claim IDs belong only in sourceClaimIds. Never include a claim ID, bracketed citation, or internal identifier in the title or story prose.`,
     `TARGET: ${input.target || "General future applications"}\nLENS: ${input.lens}\nEXPERIENCE FOCUS: ${input.focus || "Best-supported experience"}\nDEPTH: ${input.depth || "Standard"}\n\nVERIFIED CLAIMS:\n${evidenceText(input.claims)}`,
   );
   const validIds = new Set(input.claims.map((claim) => claim.id));
-  story.lens = input.lens;
+  const requestedLens = STORY_LENSES.find((lens) => lens === input.lens);
+  story.lens = requestedLens || (STORY_LENSES.includes(story.lens as (typeof STORY_LENSES)[number]) ? story.lens : "Research");
   story.sourceClaimIds = story.sourceClaimIds.filter((claimId) => validIds.has(claimId));
   story.title = cleanProfileText(story.title, 180);
   story.situation = cleanProfileText(story.situation);

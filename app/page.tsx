@@ -81,7 +81,7 @@ type InterviewFeedback = {
 };
 
 const supportedDocumentExtensions = ["pdf", "docx", "txt"];
-const lenses = ["Leadership", "Research", "Community impact", "Resilience", "Academic curiosity", "Entrepreneurship"];
+const lenses = ["Auto-select from target", "Leadership", "Research", "Community impact", "Resilience", "Academic curiosity", "Entrepreneurship"];
 const storyFocuses = [
   "Best-supported experience",
   "Research challenge",
@@ -218,6 +218,10 @@ export default function Home() {
   const activeQuestion = interview?.questions.find((question) => question.id === activeQuestionId)
     ?? interview?.questions[0]
     ?? null;
+  const storyFocusOptions = useMemo(
+    () => Array.from(new Set([...storyFocuses, ...(fit?.storyAngles.map((angle) => angle.title) || [])])),
+    [fit],
+  );
 
   const filteredClaims = claims.filter((claim) => {
     const statusMatch =
@@ -889,15 +893,20 @@ export default function Home() {
         {view === "stories" && (
           <div className="mos-page">
             <section className="mos-page-intro" data-reveal>
-              <div><span className="mos-kicker">Reusable truth, not canned essays</span><h2>Turn evidence into stories you can actually defend.</h2><p>Story Studio creates editable Situation–Action–Result–Reflection scaffolds from verified claims and flags what it still needs to ask you.</p></div>
+              <div><span className="mos-kicker">Reusable truth, not canned essays</span><h2>Choose the strongest story for the application—not the loudest title.</h2><p>Story Studio compares your target, selected experience, and verified evidence before creating an editable Situation–Action–Result–Reflection scaffold.</p></div>
               <div className="mos-story-generator">
                 <div className="mos-story-control-grid">
-                  <label><span>Narrative lens</span><select value={storyLens} onChange={(event) => setStoryLens(event.target.value)}>{lenses.map((lens) => <option key={lens}>{lens}</option>)}</select></label>
-                  <label><span>Experience focus</span><select value={storyFocus} onChange={(event) => setStoryFocus(event.target.value)}>{storyFocuses.map((focus) => <option key={focus}>{focus}</option>)}</select></label>
+                  <label><span>Story angle</span><select value={storyLens} onChange={(event) => setStoryLens(event.target.value)}>{lenses.map((lens) => <option key={lens}>{lens}</option>)}</select><small>Auto-select will not default to leadership.</small></label>
+                  <label><span>Experience to use</span><select value={storyFocus} onChange={(event) => setStoryFocus(event.target.value)}>{storyFocusOptions.map((focus) => <option key={focus}>{focus}</option>)}</select><small>Target-analysis recommendations appear here.</small></label>
                   <label><span>Scaffold depth</span><select value={storyDepth} onChange={(event) => setStoryDepth(event.target.value)}>{storyDepths.map((depth) => <option key={depth}>{depth}</option>)}</select></label>
                 </div>
                 <button className="mos-button dark" disabled={busy === "story"} onClick={generateStory}>{busy === "story" ? "Building…" : "Generate grounded story"}</button>
               </div>
+            </section>
+            <section className="mos-story-guidance" data-reveal aria-label="How MeritOS selects a story angle">
+              <article><b>01</b><div><strong>Target relevance</strong><p>What this program or role is actually asking you to demonstrate.</p></div></article>
+              <article><b>02</b><div><strong>Evidence strength</strong><p>Specific actions, outcomes, dates, and metrics that you verified.</p></div></article>
+              <article><b>03</b><div><strong>Story completeness</strong><p>Whether the experience supports situation, action, result, and reflection without guessing.</p></div></article>
             </section>
             {storyQuestions.length > 0 && <section className="mos-question-callout" data-reveal><strong>This story needs your context</strong>{storyQuestions.map((question) => <button key={question} onClick={() => openFactForm("Story context", question)}>{question}<span>Add answer +</span></button>)}</section>}
             <section className="mos-story-list">
@@ -946,7 +955,7 @@ export default function Home() {
         {view === "extension" && (
           <div className="mos-page">
             <section className="mos-extension-hero" data-reveal>
-              <div><span className="mos-kicker">The actual application workflow</span><h2>Your profile lives here. Autofill happens on the external form.</h2><p>Install the Chrome extension, connect it once, then open a legitimate grant, scholarship, program, or job form. MeritOS detects fields and opens beside the page.</p><div className="mos-action-row"><a className="mos-button pale large" href="/MeritOS-Chrome-Extension.zip">Download extension</a><a className="mos-button text-inverse" href="/extension-test.html" target="_blank">Open safe test form →</a></div></div>
+              <div><span className="mos-kicker">The actual application workflow</span><h2>Your profile lives here. Autofill happens on the external form.</h2><p>Install the Chrome extension, connect it once, then open a legitimate grant, scholarship, program, or job form. MeritOS detects fields and opens beside the page.</p><div className="mos-action-row"><a className="mos-button pale large" href="/MeritOS-Chrome-Extension.zip">Download extension</a><a className="mos-button text-inverse" href="/test-form" target="_blank">Open form testing lab →</a></div></div>
               <img src="/meritos-mark-v2.png" alt="" />
             </section>
             <section className="mos-install-grid">
