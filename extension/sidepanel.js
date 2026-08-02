@@ -2,6 +2,7 @@ const state = {
   claims: [],
   coverage: [],
   identity: { displayName: "", email: "", headline: "" },
+  activeOpportunity: null,
   fields: [],
   suggestions: new Map(),
   aiSuggestions: new Map(),
@@ -33,6 +34,10 @@ function canUseAi(field) {
   return globalThis.MeritOSIntelligence.canDraftField(field);
 }
 
+function safeForBatch(suggestion) {
+  return suggestion?.text && ["identity", "evidence"].includes(suggestion.kind);
+}
+
 function showAssistant() {
   $("connection").hidden = true;
   $("assistant").hidden = false;
@@ -48,6 +53,10 @@ function hydrateProfile(profile) {
   state.claims = profile?.claims || [];
   state.coverage = profile?.coverage || [];
   state.identity = profile?.identity || state.identity;
+  state.activeOpportunity = profile?.activeOpportunity || null;
+  $("opportunityContext").hidden = !state.activeOpportunity;
+  $("opportunityTitle").textContent = state.activeOpportunity?.title || "";
+  $("opportunityOrganization").textContent = state.activeOpportunity ? `${state.activeOpportunity.organization}${state.activeOpportunity.deadline ? ` · ${new Date(state.activeOpportunity.deadline).toLocaleDateString()}` : ""}` : "";
 }
 
 function updateCounts() {
@@ -69,7 +78,7 @@ function renderFields() {
     const suggestion = suggestionFor(field);
     state.suggestions.set(field.id, suggestion);
     const card = document.createElement("article");
-    card.className = `field ${suggestion.text ? "supported" : "unsupported"}`;
+    card.className = `field ${suggestion.text ? "supported" : "unsupported"} ${suggestion.kind || "missing"}`;
     card.innerHTML = '<div class="field-top"><input type="checkbox" aria-label="Approve answer"><div><h2></h2><div class="meta"></div></div><span class="intent"></span></div><div class="suggestion"></div><div class="evidence"></div><div class="field-actions"></div>';
     card.querySelector("h2").textContent = field.label;
     const control = field.control || field.kind;
@@ -196,7 +205,7 @@ $("settingsButton").addEventListener("click", () => {
 });
 $("analyzeMissing").addEventListener("click", () => generateDrafts(state.fields.filter((field) => !state.suggestions.get(field.id)?.text && canUseAi(field)).slice(0, 20), $("analyzeMissing")));
 $("selectAll").addEventListener("click", () => {
-  state.approved = new Set(state.fields.filter((field) => state.suggestions.get(field.id)?.text).map((field) => field.id));
+  state.approved = new Set(state.fields.filter((field) => safeForBatch(state.suggestions.get(field.id))).map((field) => field.id));
   renderFields();
 });
 $("clearSelections").addEventListener("click", () => {

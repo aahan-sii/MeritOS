@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { createGroundedDraftBatch, type DraftField } from "@/lib/ai-drafting";
-import { claims } from "@/db/schema";
+import { claims, opportunities } from "@/db/schema";
 import { extensionCorsHeaders, requireExtensionConnection } from "../_lib";
 
 export const runtime = "nodejs";
@@ -42,17 +42,34 @@ export async function POST(request: NextRequest) {
     const fields = rawFields.map(fieldFrom).filter((field): field is DraftField => Boolean(field)).slice(0, 20);
     if (!fields.length) return NextResponse.json({ error: "At least one valid application field is required." }, { status: 400, headers: extensionCorsHeaders });
     const page = body?.page && typeof body.page === "object" ? body.page as Record<string, unknown> : {};
-    const rows = await connection.db
+    const [rows, opportunityRows] = await Promise.all([connection.db
       .select({ id: claims.id, category: claims.category, statement: claims.statement })
       .from(claims)
       .where(and(eq(claims.userEmail, connection.connection.userEmail), eq(claims.status, "verified")))
       .orderBy(desc(claims.updatedAt))
-      .limit(60);
+      .limit(60), connection.db
+      .select({ title: opportunities.title, organization: opportunities.organization, url: opportunities.url, eligibility: opportunities.eligibility })
+      .from(opportunities)
+      .where(eq(opportunities.userEmail, connection.connection.userEmail))
+      .orderBy(desc(opportunities.updatedAt))
+      .limit(12)]);
+    const pageUrl = typeof page.url === "string" ? page.url : "";
+    const pageHost = (() => { try { return new URL(pageUrl).hostname.replace(/^www\./, ""); } catch { return ""; } })();
+    const activeOpportunity = opportunityRows.find((item) => {
+      try { return pageHost && new URL(item.url).hostname.replace(/^www\./, "") === pageHost; } catch { return false; }
+    }) || opportunityRows[0];
+    const opportunityContext = activeOpportunity ? (() => {
+      try {
+        const parsed = JSON.parse(activeOpportunity.eligibility) as { preflight?: { summary?: string; eligibilityRules?: string[]; requiredDocuments?: string[] } };
+        return JSON.stringify({ title: activeOpportunity.title, organization: activeOpportunity.organization, summary: parsed.preflight?.summary || "", eligibilityRules: parsed.preflight?.eligibilityRules || [], requiredDocuments: parsed.preflight?.requiredDocuments || [] });
+      } catch { return `${activeOpportunity.title} — ${activeOpportunity.organization}`; }
+    })() : "";
     const results = await createGroundedDraftBatch({
       fields,
       page: {
         title: typeof page.title === "string" ? page.title.slice(0, 300) : "",
         url: typeof page.url === "string" ? page.url.slice(0, 1_000) : "",
+        opportunityContext,
       },
       evidence: rows,
     });

@@ -44,6 +44,76 @@ type FitAnalysis = {
   opportunitySearches: Array<{ label: string; query: string; why: string }>;
 };
 
+type FitGap = FitAnalysis["gaps"][number];
+
+type GapArtifact = {
+  title: string;
+  artifactType: "outline" | "worksheet" | "plan" | "email_draft" | "portfolio_draft";
+  purpose: string;
+  content: string;
+  missingFields: Array<{ key: string; label: string; prompt: string }>;
+  sourceClaimIds: string[];
+};
+
+type OpportunityResult = {
+  company: string;
+  title: string;
+  location: string;
+  url: string;
+  source: string;
+  repository: string;
+};
+
+type OpportunityPreflight = {
+  title: string;
+  organization: string;
+  opportunityType: string;
+  summary: string;
+  deadlineText: string;
+  deadlineIso: string;
+  location: string;
+  aiPolicy: { status: "permitted" | "restricted" | "prohibited" | "unknown"; detail: string };
+  eligibilityRules: string[];
+  requiredDocuments: string[];
+  applicationQuestions: string[];
+  requirements: Array<{
+    category: "eligibility" | "document" | "experience" | "question" | "dependency";
+    requirement: string;
+    status: "supported" | "unclear" | "missing";
+    evidenceClaimIds: string[];
+    action: string;
+  }>;
+  missingInformationQuestions: string[];
+  nextActions: Array<{ title: string; detail: string; priority: "now" | "soon" | "later" }>;
+  confidence: string;
+};
+
+type ApplicationPacket = {
+  opportunityId: string;
+  applicationId: string;
+  title: string;
+  organization: string;
+  sourceUrl: string;
+  deadlineText: string;
+  requiredDocuments: string[];
+  requirements: OpportunityPreflight["requirements"];
+  answers: Array<{
+    question: string;
+    status: "draft" | "needs_input" | "not_configured";
+    draft: string;
+    usedEvidenceIds: string[];
+    questions: string[];
+  }>;
+  missingInputs: string[];
+  nextActions: OpportunityPreflight["nextActions"];
+  safetyNote: string;
+};
+
+type ApplicationQueueItem = {
+  application: { id: string; opportunityId: string; status: "planning" | "drafting" | "review" | "submitted" | "withdrawn"; updatedAt: string };
+  opportunity: { id: string; title: string; organization: string; url: string; deadline: string | null };
+};
+
 type Story = {
   id: string;
   title: string;
@@ -195,6 +265,20 @@ export default function Home() {
   const [practiceAnswer, setPracticeAnswer] = useState("");
   const [feedback, setFeedback] = useState<InterviewFeedback | null>(null);
   const [extensionToken, setExtensionToken] = useState("");
+  const [gapArtifact, setGapArtifact] = useState<GapArtifact | null>(null);
+  const [gapArtifactValues, setGapArtifactValues] = useState<Record<string, string>>({});
+  const [showContextImport, setShowContextImport] = useState(false);
+  const [contextUrl, setContextUrl] = useState("");
+  const [contextText, setContextText] = useState("");
+  const [opportunityQuery, setOpportunityQuery] = useState("");
+  const [opportunityResults, setOpportunityResults] = useState<OpportunityResult[]>([]);
+  const [opportunityUrl, setOpportunityUrl] = useState("");
+  const [opportunityText, setOpportunityText] = useState("");
+  const [showOpportunityText, setShowOpportunityText] = useState(false);
+  const [preflight, setPreflight] = useState<OpportunityPreflight | null>(null);
+  const [currentOpportunityId, setCurrentOpportunityId] = useState("");
+  const [applicationPacket, setApplicationPacket] = useState<ApplicationPacket | null>(null);
+  const [applicationQueue, setApplicationQueue] = useState<ApplicationQueueItem[]>([]);
 
   const verifiedClaims = useMemo(
     () => claims.filter((claim) => claim.status === "verified"),
@@ -240,10 +324,11 @@ export default function Home() {
       fetch("/api/fit-analysis"),
       fetch("/api/stories"),
       fetch("/api/interview"),
+      fetch("/api/applications"),
     ])
       .then(async (responses) => {
         if (responses.some((response) => !response.ok)) throw new Error("Your workspace could not be loaded.");
-        const [profileData, claimsData, fitData, storiesData, interviewData] =
+        const [profileData, claimsData, fitData, storiesData, interviewData, applicationsData] =
           await Promise.all(responses.map((response) => response.json()));
         if (cancelled) return;
         const nextProfile = {
@@ -256,6 +341,7 @@ export default function Home() {
         setFit(fitData.analysis);
         setStories(storiesData.stories);
         setInterview(interviewData.session);
+        setApplicationQueue(applicationsData.applications || []);
         setTarget(fitData.analysis?.target || interviewData.session?.target || "");
         setActiveQuestionId(interviewData.session?.questions?.[0]?.id || "");
       })
@@ -459,6 +545,183 @@ export default function Home() {
     } finally {
       setBusy("");
     }
+  }
+
+  async function buildGapArtifact(gap: FitGap) {
+    setBusy(`gap-${gap.area}`);
+    setError("");
+    try {
+      const data = await readJson(await fetch("/api/gap-artifact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target: fit?.target || target, gap }),
+      }));
+      setGapArtifact(data.artifact);
+      setGapArtifactValues({});
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "MeritOS could not build this starter.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function completedArtifact() {
+    if (!gapArtifact) return "";
+    return gapArtifact.content.replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi, (_match, key: string) => {
+      const value = gapArtifactValues[key]?.trim();
+      return value || `[NEEDS YOUR INPUT: ${gapArtifact.missingFields.find((field) => field.key === key)?.label || key}]`;
+    });
+  }
+
+  function downloadGapArtifact() {
+    if (!gapArtifact) return;
+    const file = new Blob([`# ${gapArtifact.title}\n\n${gapArtifact.purpose}\n\n${completedArtifact()}\n`], { type: "text/markdown" });
+    const url = URL.createObjectURL(file);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${gapArtifact.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "meritos-starter"}.md`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    announce("Starter downloaded.");
+  }
+
+  async function addArtifactAsContext() {
+    if (!gapArtifact) return;
+    setBusy("save-artifact");
+    try {
+      const data = await readJson(await fetch("/api/claims", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: "Generated artifact draft",
+          statement: `${gapArtifact.title}\n\n${completedArtifact()}`,
+          status: "draft",
+          confidence: 0,
+          evidence: [{ source: "MeritOS gap starter", supportingClaimIds: gapArtifact.sourceClaimIds }],
+          allowedUses: [],
+        }),
+      }));
+      setClaims((current) => [data.claim, ...current]);
+      setGapArtifact(null);
+      announce("Added as a draft. Review it before MeritOS can reuse it.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "The starter could not be saved.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function importContextSource() {
+    if (!contextUrl.trim()) return;
+    setBusy("context-url");
+    setError("");
+    try {
+      const data = await readJson(await fetch("/api/context-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: contextUrl, pastedText: contextText }),
+      }));
+      setClaims((current) => [...data.candidateClaims, ...current]);
+      setShowContextImport(false);
+      setContextUrl("");
+      setContextText("");
+      announce(`${data.candidateClaims.length} draft profile item${data.candidateClaims.length === 1 ? "" : "s"} imported for review.`);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "That context source could not be imported.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function scanOpportunityBoards() {
+    const query = opportunityQuery.trim() || fit?.target || target;
+    if (!query) return;
+    setBusy("opportunity-watch");
+    setError("");
+    try {
+      const data = await readJson(await fetch("/api/opportunity-watch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
+      }));
+      setOpportunityResults(data.items || []);
+      announce(`Checked public internship boards and found ${data.items?.length || 0} possible matches.`);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Opportunity boards could not be scanned.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function analyzeOpportunityPage() {
+    if (!opportunityUrl.trim()) return;
+    setBusy("opportunity-preflight");
+    setError("");
+    setApplicationPacket(null);
+    try {
+      const data = await readJson(await fetch("/api/opportunity-preflight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: opportunityUrl, pastedText: opportunityText }),
+      }));
+      setPreflight(data.preflight);
+      setCurrentOpportunityId(data.opportunityId);
+      setOpportunityUrl(data.sourceUrl);
+      const applicationsData = await readJson(await fetch("/api/applications"));
+      setApplicationQueue(applicationsData.applications || []);
+      announce("Official requirements analyzed and saved to your application queue.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "That opportunity could not be analyzed.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function buildApplicationPacket() {
+    if (!currentOpportunityId) return;
+    setBusy("application-packet");
+    setError("");
+    try {
+      const data = await readJson(await fetch("/api/application-packet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunityId: currentOpportunityId }),
+      }));
+      setApplicationPacket(data.packet);
+      const applicationsData = await readJson(await fetch("/api/applications"));
+      setApplicationQueue(applicationsData.applications || []);
+      announce("Your evidence-backed application packet is ready for review.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "The application packet could not be built.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function downloadApplicationPacket() {
+    if (!applicationPacket) return;
+    const answers = applicationPacket.answers.map((answer) => `## ${answer.question}\n\n${answer.status === "draft" ? answer.draft : `NEEDS INPUT: ${answer.questions.join(" ")}`}`).join("\n\n");
+    const content = [
+      `# ${applicationPacket.title} — Application packet`,
+      `Organization: ${applicationPacket.organization}`,
+      `Official page: ${applicationPacket.sourceUrl}`,
+      `Deadline: ${applicationPacket.deadlineText || "Not confirmed"}`,
+      "## Required documents",
+      ...(applicationPacket.requiredDocuments.length ? applicationPacket.requiredDocuments.map((item) => `- ${item}`) : ["- No documents were explicitly detected. Confirm on the official page."]),
+      "## Draft answers",
+      answers || "No application questions were visible on the analyzed page. Use the Chrome extension on the live form.",
+      "## Missing information",
+      ...(applicationPacket.missingInputs.length ? applicationPacket.missingInputs.map((item) => `- ${item}`) : ["- None detected by this preflight."]),
+      `> ${applicationPacket.safetyNote}`,
+    ].join("\n\n");
+    const file = new Blob([content], { type: "text/markdown" });
+    const url = URL.createObjectURL(file);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${applicationPacket.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "application"}-packet.md`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    announce("Application packet downloaded.");
   }
 
   async function generateStory() {
@@ -666,7 +929,7 @@ export default function Home() {
           </div>
           <div className="mos-setup-row">
             <span><b>3</b><span><strong>Add what your résumé misses</strong><small>Links, contact details, goals, preferences, and availability improve form accuracy.</small></span></span>
-            <div className="mos-action-row"><button className="mos-button light" onClick={() => openFactForm("Links & profiles", "Paste your LinkedIn, GitHub, portfolio, or personal website URL. Add a short note describing what it contains.")}>Add a link</button><button className="mos-button light" onClick={() => openFactForm("Contact details")}>Add contact</button></div>
+            <div className="mos-action-row"><button className="mos-button light" onClick={() => setShowContextImport(true)}>Import website / LinkedIn</button><button className="mos-button light" onClick={() => openFactForm("Contact details")}>Add contact</button></div>
           </div>
           {claims.length > 0 && (
             <div className="mos-onboarding-claims">
@@ -695,6 +958,7 @@ export default function Home() {
           {verifiedClaims.length === 0 && <small className="mos-helper">Verify at least one real fact to continue.</small>}
         </section>
         {showImport && renderImportModal()}
+        {showContextImport && renderContextImportModal()}
       </main>
     );
   }
@@ -756,7 +1020,7 @@ export default function Home() {
               <article><small>Verified facts</small><strong>{verifiedClaims.length}</strong><span>safe for supported answers</span></article>
               <article><small>Needs your review</small><strong>{reviewClaims.length}</strong><span>excluded from autofill</span></article>
               <article><small>Context coverage</small><strong>{coveredAreas.length}/{coverageAreas.length}</strong><span>areas represented</span></article>
-              <article><small>Reusable stories</small><strong>{stories.length}</strong><span>{stories.filter((story) => story.status === "approved").length} approved</span></article>
+              <article><small>Active applications</small><strong>{applicationQueue.filter((item) => !["submitted", "withdrawn"].includes(item.application.status)).length}</strong><span>saved in your command center</span></article>
             </section>
 
             <section className="mos-grid two-one">
@@ -764,9 +1028,10 @@ export default function Home() {
                 <div className="mos-card-head"><div><span className="mos-kicker">Next best actions</span><h3>Make MeritOS more accurate</h3></div></div>
                 <div className="mos-action-list">
                   {reviewClaims.length > 0 && <button onClick={() => goTo("review")}><b>01</b><span><strong>Review {reviewClaims.length} extracted facts</strong><small>Unverified information cannot enter forms.</small></span><i>→</i></button>}
-                  {coverageAreas.length < coverageAreas.length && <button onClick={() => openFactForm(coverageAreas.find((area) => !coveredAreas.includes(area))?.name)}><b>02</b><span><strong>Fill a missing context area</strong><small>Your résumé does not explain everything that matters.</small></span><i>→</i></button>}
-                  <button onClick={() => goTo("fit")}><b>03</b><span><strong>{fit ? "Refresh target fit" : "Tell MeritOS what you are targeting"}</strong><small>Turn your profile into a specific improvement plan.</small></span><i>→</i></button>
-                  <button onClick={() => goTo("extension")}><b>04</b><span><strong>Install or reconnect the Chrome side panel</strong><small>Use approved profile facts on legitimate external forms.</small></span><i>→</i></button>
+                  {coveredAreas.length < coverageAreas.length && <button onClick={() => openFactForm(coverageAreas.find((area) => !coveredAreas.includes(area))?.name)}><b>02</b><span><strong>Fill a missing context area</strong><small>Your résumé does not explain everything that matters.</small></span><i>→</i></button>}
+                  {applicationQueue.length > 0 && <button onClick={() => goTo("fit")}><b>03</b><span><strong>Continue your application queue</strong><small>Review saved opportunities, requirements, and next actions.</small></span><i>→</i></button>}
+                  <button onClick={() => goTo("fit")}><b>{applicationQueue.length ? "04" : "03"}</b><span><strong>{fit ? "Refresh target fit" : "Tell MeritOS what you are targeting"}</strong><small>Turn your profile into a specific improvement plan.</small></span><i>→</i></button>
+                  <button onClick={() => goTo("extension")}><b>{applicationQueue.length ? "05" : "04"}</b><span><strong>Install or reconnect the Chrome side panel</strong><small>Use approved profile facts on legitimate external forms.</small></span><i>→</i></button>
                 </div>
               </article>
               <article className="mos-card mos-context-card" data-reveal>
@@ -793,7 +1058,7 @@ export default function Home() {
           <div className="mos-page">
             <section className="mos-page-intro" data-reveal>
               <div><span className="mos-kicker">Your source of truth</span><h2>Build the fullest truthful picture of you.</h2><p>Documents provide evidence. Direct context captures goals, motivations, preferences, and details that never make it onto a résumé.</p></div>
-              <div className="mos-action-row"><button className="mos-button light" onClick={() => openFactForm("Links & profiles", "Paste your LinkedIn, GitHub, portfolio, or personal website URL. Add a short note describing what it contains.")}>Add link</button><button className="mos-button light" onClick={() => openFactForm()}>Add context</button><button className="mos-button dark" onClick={() => setShowImport(true)}>Upload document</button></div>
+              <div className="mos-action-row"><button className="mos-button light" onClick={() => setShowContextImport(true)}>Import website / LinkedIn</button><button className="mos-button light" onClick={() => openFactForm()}>Add context</button><button className="mos-button dark" onClick={() => setShowImport(true)}>Upload document</button></div>
             </section>
             <section className="mos-coverage-grid" data-reveal>
               {coverageAreas.map((area) => {
@@ -863,6 +1128,45 @@ export default function Home() {
                 <button className="mos-button dark large" disabled={!target.trim() || busy === "fit"} onClick={runFitAnalysis}>{busy === "fit" ? "Scanning profile…" : fit ? "Refresh my analysis" : "Analyze my fit"}</button>
               </div>
             </section>
+            <section className="mos-command-center" data-reveal>
+              <div className="mos-command-intro">
+                <span className="mos-kicker">Application command center</span>
+                <h2>Turn an official opportunity page into an action plan.</h2>
+                <p>Paste the official program, grant, scholarship, internship, or job page. MeritOS reads the requirements, compares them with your verified profile, saves the deadline, and prepares a reviewable packet for the extension.</p>
+                <div className="mos-command-guardrail"><strong>You stay in control.</strong><span>MeritOS can research, prepare, and fill approved answers. It never silently presses Submit.</span></div>
+              </div>
+              <div className="mos-command-input">
+                <label><span>Official opportunity URL</span><input value={opportunityUrl} onChange={(event) => setOpportunityUrl(event.target.value)} placeholder="https://organization.org/program/apply" /></label>
+                <button className="mos-text-toggle" onClick={() => setShowOpportunityText((value) => !value)}>{showOpportunityText ? "Hide pasted instructions" : "Page blocked? Paste instructions instead +"}</button>
+                {showOpportunityText && <label><span>Official instructions</span><textarea value={opportunityText} onChange={(event) => setOpportunityText(event.target.value)} placeholder="Paste eligibility, deadlines, required documents, and application questions from the official page." /></label>}
+                <button className="mos-button dark large full" disabled={!opportunityUrl.trim() || busy === "opportunity-preflight"} onClick={analyzeOpportunityPage}>{busy === "opportunity-preflight" ? "Reading the official page…" : "Run opportunity preflight"}</button>
+              </div>
+              {preflight && (
+                <div className="mos-preflight">
+                  <header>
+                    <div><span className="mos-pill success">Saved to application queue</span><h3>{preflight.title}</h3><p>{preflight.organization}{preflight.location ? ` · ${preflight.location}` : ""}</p></div>
+                    <div className="mos-preflight-actions"><a className="mos-button light" href={opportunityUrl} target="_blank" rel="noreferrer">Open official page ↗</a><button className="mos-button dark" disabled={busy === "application-packet"} onClick={buildApplicationPacket}>{busy === "application-packet" ? "Building packet…" : "Build application packet"}</button></div>
+                  </header>
+                  <div className="mos-preflight-metrics">
+                    <article><small>Deadline</small><strong>{preflight.deadlineText || "Not confirmed"}</strong></article>
+                    <article><small>Requirements supported</small><strong>{preflight.requirements.filter((item) => item.status === "supported").length}/{preflight.requirements.length}</strong></article>
+                    <article><small>Needs attention</small><strong>{preflight.requirements.filter((item) => item.status !== "supported").length}</strong></article>
+                    <article><small>AI policy</small><strong>{preflight.aiPolicy.status}</strong></article>
+                  </div>
+                  <p className="mos-preflight-summary">{preflight.summary}</p>
+                  <div className="mos-requirement-list">
+                    {preflight.requirements.slice(0, 12).map((item, index) => <article key={`${item.requirement}-${index}`}><span className={`mos-requirement-status ${item.status}`}>{item.status}</span><div><strong>{item.requirement}</strong><small>{item.action}</small></div></article>)}
+                  </div>
+                  <div className="mos-preflight-foot"><span>{preflight.requiredDocuments.length} required document{preflight.requiredDocuments.length === 1 ? "" : "s"} detected</span><span>{preflight.applicationQuestions.length} visible application question{preflight.applicationQuestions.length === 1 ? "" : "s"} detected</span><span>{preflight.confidence}</span></div>
+                </div>
+              )}
+              {applicationQueue.length > 0 && (
+                <div className="mos-application-queue">
+                  <div><span className="mos-kicker">Saved queue</span><h3>Your active applications</h3></div>
+                  <div>{applicationQueue.filter((item) => !["submitted", "withdrawn"].includes(item.application.status)).slice(0, 5).map((item) => <a key={item.application.id} href={item.opportunity.url} target="_blank" rel="noreferrer"><span><strong>{item.opportunity.title}</strong><small>{item.opportunity.organization} · {item.application.status}</small></span><b>{item.opportunity.deadline ? new Date(item.opportunity.deadline).toLocaleDateString() : "No confirmed deadline"} ↗</b></a>)}</div>
+                </div>
+              )}
+            </section>
             {fit ? (
               <>
                 <section className="mos-fit-summary" data-reveal>
@@ -877,11 +1181,16 @@ export default function Home() {
                 </section>
                 <section className="mos-grid two-one">
                   <article className="mos-card" data-reveal><span className="mos-kicker">Strongest evidence</span><h3>What already supports your case</h3><div className="mos-insight-list">{fit.strengths.map((strength) => <article key={`${strength.claimId}-${strength.title}`}><span>✓</span><div><strong>{strength.title}</strong><p>{strength.reason}</p></div></article>)}</div></article>
-                  <article className="mos-card" data-reveal><span className="mos-kicker">Highest-value gaps</span><h3>What to improve next</h3><div className="mos-gap-list">{fit.gaps.map((gap) => <article key={gap.area}><span className={`mos-priority ${gap.priority}`}>{gap.priority}</span><strong>{gap.area}</strong><p>{gap.whyItMatters}</p><small>{gap.action}</small></article>)}</div></article>
+                  <article className="mos-card" data-reveal><span className="mos-kicker">Highest-value gaps</span><h3>What to improve next</h3><div className="mos-gap-list">{fit.gaps.map((gap) => <article key={gap.area}><span className={`mos-priority ${gap.priority}`}>{gap.priority}</span><strong>{gap.area}</strong><p>{gap.whyItMatters}</p><small>{gap.action}</small><button className="mos-gap-create" disabled={busy === `gap-${gap.area}`} onClick={() => buildGapArtifact(gap)}>{busy === `gap-${gap.area}` ? "Creating an honest starter…" : "Have MeritOS create a starter →"}</button></article>)}</div></article>
                 </section>
                 <section className="mos-grid equal">
                   <article className="mos-card" data-reveal><span className="mos-kicker">Missing personal context</span><h3>Questions only you can answer</h3><div className="mos-question-list">{fit.missingContextQuestions.map((question) => <button key={question} onClick={() => openFactForm("Motivation & goals", question)}><span>{question}</span><b>Add answer +</b></button>)}</div></article>
                   <article className="mos-card" data-reveal><span className="mos-kicker">Where to look</span><h3>Targeted opportunity searches</h3><div className="mos-search-leads">{fit.opportunitySearches.map((search) => <a key={search.query} href={`https://www.google.com/search?q=${encodeURIComponent(search.query)}`} target="_blank" rel="noreferrer"><span><strong>{search.label}</strong><small>{search.why}</small></span><b>Search ↗</b></a>)}</div><p className="mos-fine-print">Search leads are not availability claims. Confirm eligibility and deadlines on official program pages.</p></article>
+                </section>
+                <section className="mos-opportunity-radar" data-reveal>
+                  <div><span className="mos-kicker">Public-board opportunity radar</span><h3>Scan active GitHub internship lists</h3><p>MeritOS checks public internship repositories for matching rows. This is a live lead scan—not an automatic application or an eligibility claim.</p></div>
+                  <div className="mos-radar-controls"><input value={opportunityQuery} onChange={(event) => setOpportunityQuery(event.target.value)} placeholder={fit.target} /><button className="mos-button dark" disabled={busy === "opportunity-watch"} onClick={scanOpportunityBoards}>{busy === "opportunity-watch" ? "Checking boards…" : "Scan public boards"}</button></div>
+                  {opportunityResults.length > 0 && <div className="mos-radar-results">{opportunityResults.map((item) => <article key={`${item.source}-${item.url}`}><span><small>{item.company} · {item.location}</small><strong>{item.title}</strong><em>{item.source}</em></span><div><button onClick={() => { setOpportunityUrl(item.url); setPreflight(null); window.scrollTo({ top: 250, behavior: "smooth" }); }}>Preflight this lead</button><a href={item.url} target="_blank" rel="noreferrer">Open ↗</a></div></article>)}</div>}
                 </section>
               </>
             ) : (
@@ -892,7 +1201,7 @@ export default function Home() {
 
         {view === "stories" && (
           <div className="mos-page">
-            <section className="mos-page-intro" data-reveal>
+            <section className="mos-page-intro mos-story-intro" data-reveal>
               <div><span className="mos-kicker">Reusable truth, not canned essays</span><h2>Choose the strongest story for the application—not the loudest title.</h2><p>Story Studio compares your target, selected experience, and verified evidence before creating an editable Situation–Action–Result–Reflection scaffold.</p></div>
               <div className="mos-story-generator">
                 <div className="mos-story-control-grid">
@@ -978,6 +1287,36 @@ export default function Home() {
       </section>
 
       {showImport && renderImportModal()}
+      {showContextImport && renderContextImportModal()}
+      {applicationPacket && (
+        <div className="mos-modal-backdrop" onMouseDown={() => setApplicationPacket(null)}>
+          <section className="mos-modal mos-packet-modal" role="dialog" aria-modal="true" aria-labelledby="packet-title" onMouseDown={(event) => event.stopPropagation()}>
+            <button className="mos-modal-close" onClick={() => setApplicationPacket(null)} aria-label="Close">×</button>
+            <span className="mos-kicker">Review before it reaches the form</span><h2 id="packet-title">{applicationPacket.title} packet</h2>
+            <p>{applicationPacket.organization} · {applicationPacket.deadlineText || "deadline not confirmed"}</p>
+            <div className="mos-packet-summary"><article><strong>{applicationPacket.requiredDocuments.length}</strong><span>documents detected</span></article><article><strong>{applicationPacket.answers.filter((answer) => answer.status === "draft").length}</strong><span>supported drafts</span></article><article><strong>{applicationPacket.missingInputs.length}</strong><span>answers need you</span></article></div>
+            <section className="mos-packet-documents"><strong>Document checklist</strong>{applicationPacket.requiredDocuments.length ? applicationPacket.requiredDocuments.map((item) => <label key={item}><input type="checkbox" /> <span>{item}</span></label>) : <p>No documents were explicitly detected. Confirm on the official page.</p>}</section>
+            <section className="mos-packet-answers">
+              <strong>Detected application questions</strong>
+              {applicationPacket.answers.length ? applicationPacket.answers.map((answer, index) => <article key={`${answer.question}-${index}`}><span className={`mos-requirement-status ${answer.status === "draft" ? "supported" : "unclear"}`}>{answer.status === "draft" ? "supported draft" : "needs you"}</span><h3>{answer.question}</h3>{answer.status === "draft" ? <textarea value={answer.draft} onChange={(event) => setApplicationPacket((current) => current ? { ...current, answers: current.answers.map((item, itemIndex) => itemIndex === index ? { ...item, draft: event.target.value } : item) } : current)} /> : <div className="mos-packet-question"><p>{answer.questions.join(" ")}</p><button onClick={() => { setApplicationPacket(null); openFactForm("Motivation & goals", answer.questions[0] || answer.question); }}>Add truthful context →</button></div>}<small>{answer.usedEvidenceIds.length ? `${answer.usedEvidenceIds.length} verified fact${answer.usedEvidenceIds.length === 1 ? "" : "s"} used` : "No profile evidence used"}</small></article>) : <p>No application prompts were visible on the public page. Open the live form with the extension to scan its fields.</p>}
+            </section>
+            <p className="mos-command-guardrail"><strong>Final approval stays yours.</strong><span>{applicationPacket.safetyNote}</span></p>
+            <div className="mos-artifact-actions"><button className="mos-button light" onClick={downloadApplicationPacket}>Download packet</button><a className="mos-button dark" href={applicationPacket.sourceUrl} target="_blank" rel="noreferrer">Open form with MeritOS ↗</a></div>
+          </section>
+        </div>
+      )}
+      {gapArtifact && (
+        <div className="mos-modal-backdrop" onMouseDown={() => setGapArtifact(null)}>
+          <section className="mos-modal mos-artifact-modal" role="dialog" aria-modal="true" aria-labelledby="artifact-title" onMouseDown={(event) => event.stopPropagation()}>
+            <button className="mos-modal-close" onClick={() => setGapArtifact(null)} aria-label="Close">×</button>
+            <span className="mos-kicker">Evidence-bound starter</span><h2 id="artifact-title">{gapArtifact.title}</h2><p>{gapArtifact.purpose}</p>
+            {gapArtifact.missingFields.length > 0 && <section className="mos-artifact-inputs"><strong>Finish the highlighted parts</strong>{gapArtifact.missingFields.map((field) => <label key={field.key}><span>{field.label}</span><small>{field.prompt}</small><input value={gapArtifactValues[field.key] || ""} onChange={(event) => setGapArtifactValues((current) => ({ ...current, [field.key]: event.target.value }))} placeholder="Needs your truthful input" /></label>)}</section>}
+            <pre className="mos-artifact-preview">{completedArtifact()}</pre>
+            <p className="mos-fine-print">Generated from verified context. Unfilled placeholders stay visibly marked, and saving adds a draft—not a verified fact.</p>
+            <div className="mos-artifact-actions"><button className="mos-button light" onClick={downloadGapArtifact}>Download .md</button><button className="mos-button light" disabled={busy === "save-artifact"} onClick={addArtifactAsContext}>Add as draft context</button><button className="mos-button dark" disabled={busy === "save-artifact"} onClick={() => { downloadGapArtifact(); void addArtifactAsContext(); }}>{busy === "save-artifact" ? "Adding…" : "Download + add draft"}</button></div>
+          </section>
+        </div>
+      )}
       {showFactForm && (
         <div className="mos-modal-backdrop" onMouseDown={() => setShowFactForm(false)}>
           <section className="mos-modal" role="dialog" aria-modal="true" aria-labelledby="fact-title" onMouseDown={(event) => event.stopPropagation()}>
@@ -1012,6 +1351,22 @@ export default function Home() {
           {importStage === "uploading" && <div className="mos-importing"><img src="/meritos-mark-v2.png" alt="" /><h3>Reading structure and grouping evidence…</h3><div><span /></div></div>}
           {importStage === "done" && <div className="mos-import-done"><strong>Import complete</strong><p>{importMessage}</p><button className="mos-button dark" onClick={() => { closeImport(); goTo("review"); }}>Review extracted facts</button></div>}
           {importStage === "error" && <ErrorMessage message={importMessage} />}
+        </section>
+      </div>
+    );
+  }
+
+  function renderContextImportModal() {
+    return (
+      <div className="mos-modal-backdrop" onMouseDown={() => setShowContextImport(false)}>
+        <section className="mos-modal" role="dialog" aria-modal="true" aria-labelledby="context-import-title" onMouseDown={(event) => event.stopPropagation()}>
+          <button className="mos-modal-close" onClick={() => setShowContextImport(false)} aria-label="Close">×</button>
+          <span className="mos-kicker">Profile source</span><h2 id="context-import-title">Import a website or LinkedIn profile</h2>
+          <p>Public personal websites can be read directly. LinkedIn blocks dependable public imports, so paste your About and Experience text or upload its PDF export.</p>
+          <label>Profile URL<input value={contextUrl} onChange={(event) => setContextUrl(event.target.value)} placeholder="https://yourname.com or https://linkedin.com/in/…" /></label>
+          <label>Optional profile text<textarea value={contextText} onChange={(event) => setContextText(event.target.value)} placeholder="Paste LinkedIn About, Experience, Projects, or other public profile text here." /></label>
+          <p className="mos-fine-print">Imported items remain drafts until you review and verify them. MeritOS will not sign in to LinkedIn or bypass access controls.</p>
+          <button className="mos-button dark large full" disabled={!contextUrl.trim() || busy === "context-url"} onClick={importContextSource}>{busy === "context-url" ? "Reading source…" : "Import draft facts"}</button>
         </section>
       </div>
     );

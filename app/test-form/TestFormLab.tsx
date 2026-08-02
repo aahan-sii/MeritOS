@@ -16,6 +16,7 @@ type ScenarioKey = keyof typeof scenarios;
 
 export default function TestFormLab() {
   const [scenarioKey, setScenarioKey] = useState<ScenarioKey>("internship");
+  const [gradeLevel, setGradeLevel] = useState("");
   const scenario = scenarios[scenarioKey];
   return (
     <main className={styles.page}>
@@ -37,6 +38,10 @@ export default function TestFormLab() {
         <label>{scenario.shortPrompt}<input name="scenario_short_answer" maxLength={240} /></label>
         <label>{scenario.longPrompt} *<textarea name="scenario_long_answer" rows={7} maxLength={1800} required /><small>Maximum 1,800 characters</small></label>
         <fieldset><legend>Current education level *</legend>{["High school", "Undergraduate", "Graduate student", "Other"].map((option) => <label className={styles.choice} key={option}><input type="radio" name="education_level" value={option} required />{option}</label>)}</fieldset>
+        <div className={styles.buttonQuestion} role="radiogroup" aria-labelledby="grade-level-label">
+          <strong id="grade-level-label">Current grade level (button-style control)</strong>
+          <div>{["9th grade", "10th grade", "11th grade", "12th grade"].map((option) => <button key={option} type="button" role="radio" aria-checked={gradeLevel === option} onClick={() => setGradeLevel(option)}>{option}</button>)}</div>
+        </div>
         <label>Preferred participation format<select name="participation_format" defaultValue=""><option value="" disabled>Choose one</option><option>In person</option><option>Remote</option><option>Hybrid</option><option>No preference</option></select></label>
         <fieldset><legend>Areas of experience</legend>{["Research", "Software development", "Community service", "Leadership", "Data analysis"].map((option) => <label className={styles.choice} key={option}><input type="checkbox" name="experience_areas" value={option} />{option}</label>)}</fieldset>
         {scenarioKey === "grant" && <label>Funding requested in USD<input name="funding_requested" type="number" min="0" step="100" /></label>}

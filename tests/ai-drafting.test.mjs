@@ -43,6 +43,8 @@ test("draft prompt contains verified facts and a hard evidence-only instruction"
     evidence: [{ id: "claim_1", category: "Project or Impact", statement: "Built a data pipeline for a class project." }],
   });
   assert.match(prompt.developer, /Never invent/i);
+  assert.match(prompt.developer, /applicant's role/i);
+  assert.match(prompt.developer, /isolated result or metric/i);
   assert.match(prompt.user, /claim_1/);
   assert.match(prompt.user, /400/);
 });

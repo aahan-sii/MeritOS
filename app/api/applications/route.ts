@@ -18,6 +18,7 @@ export async function GET() {
           id: opportunities.id,
           title: opportunities.title,
           organization: opportunities.organization,
+          url: opportunities.url,
           deadline: opportunities.deadline,
         },
       })

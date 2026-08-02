@@ -26,6 +26,9 @@
     if (/\b(work authori[sz]ation|legally authorized|visa sponsorship|citizenship status)\b/.test(value)) return "legal_status";
     if (/\b(consent|permission|agree to|authorize contact|may we contact)\b/.test(value)) return "consent";
     if (/\b(gender|race|ethnicity|disability|veteran status|sexual orientation|date of birth|birth date)\b/.test(value)) return "sensitive_demographic";
+    if (/\b(current education level|level of education|school level|student level|academic level)\b/.test(value)) return "education_level";
+    if (/\b(expected graduation|graduation (?:date|year)|class of)\b/.test(value)) return "graduation_year";
+    if (/\b(current grade|grade level|year in school|class year)\b/.test(value)) return "grade_level";
     if (/\b(school|institution|university|college|organization|organisation|employer)\b/.test(value)) return "institution";
     if (/\b(why.*apply|why.*fellowship|motivation|motivated|interest in this|personal statement|statement of purpose)\b/.test(value)) return "motivation";
     if (/\b(research|laboratory|experiment|publication|academic investigation)\b/.test(value)) return "research";
@@ -107,6 +110,39 @@
     return option ? String(option.label || option.value || "") : "";
   }
 
+  function educationProfile(claims) {
+    const evidence = claims.filter((claim) => claimIntent(claim) === "education");
+    const joined = evidence.map((claim) => claim.statement || "").join(" \n ");
+    let graduation = joined.match(/(?:class of|expected(?: graduation)?(?: in)?|graduat(?:ing|ion)[^0-9]{0,12})\s*(?:may|june|spring|fall)?\s*(20\d{2})/i)?.[1] || "";
+    let inferredGraduation = false;
+    const explicitGrade = joined.match(/\b(9th|10th|11th|12th|freshman|sophomore|junior|senior)\s+(?:grade|student|year)?\b/i)?.[1] || "";
+    if (!graduation && explicitGrade) {
+      const gradeMap = { "9th": 9, freshman: 9, "10th": 10, sophomore: 10, "11th": 11, junior: 11, "12th": 12, senior: 12 };
+      const grade = gradeMap[explicitGrade.toLowerCase()];
+      const now = new Date();
+      const academicEndYear = now.getMonth() >= 6 ? now.getFullYear() + 1 : now.getFullYear();
+      if (grade) {
+        graduation = String(academicEndYear + (12 - grade));
+        inferredGraduation = true;
+      }
+    }
+    let inferredGrade = "";
+    if (!explicitGrade && graduation) {
+      const now = new Date();
+      const academicEndYear = now.getMonth() >= 6 ? now.getFullYear() + 1 : now.getFullYear();
+      const grade = 12 - (Number(graduation) - academicEndYear);
+      if (grade >= 9 && grade <= 12) inferredGrade = `${grade}${grade === 9 ? "th" : grade === 10 ? "th" : grade === 11 ? "th" : "th"} grade`;
+    }
+    const level = /\b(high school|secondary school|academy)\b/i.test(joined)
+      ? "High school"
+      : /\b(university|college|bachelor|undergraduate)\b/i.test(joined)
+        ? "Undergraduate"
+        : /\b(master|graduate student)\b/i.test(joined)
+          ? "Graduate"
+          : /\b(ph\.?d|doctorate|doctoral)\b/i.test(joined) ? "Doctoral" : "";
+    return { level, graduation, grade: explicitGrade || inferredGrade, inferredGrade: Boolean(inferredGrade), inferredGraduation, evidence };
+  }
+
   function missing(source, intent) {
     return { text: "", source, intent, kind: "missing" };
   }
@@ -140,6 +176,14 @@
       const text = conciseInstitution ? fitToOptions(conciseInstitution.slice(0, field.maxLength || 500), field) : "";
       return text ? { text, source: "Verified education evidence", intent, kind: "evidence" } : missing("No matching school or institution was found in verified evidence", intent);
     }
+    if (["education_level", "graduation_year", "grade_level"].includes(intent)) {
+      const education = educationProfile(claims);
+      const raw = intent === "education_level" ? education.level : intent === "graduation_year" ? education.graduation : education.grade;
+      const text = fitToOptions(raw, field);
+      if (!text) return missing(`No verified education evidence supports this ${intent.replaceAll("_", " ")} answer`, intent);
+      const inferred = (intent === "grade_level" && education.inferredGrade) || (intent === "graduation_year" && education.inferredGraduation);
+      return { text, source: inferred ? "Inferred from verified expected-graduation evidence · review individually" : "Verified education evidence", intent, kind: inferred ? "inference" : "evidence" };
+    }
     if (intent === "legal_status") return missing("Legal or work-authorization answers require your explicit application-specific confirmation", intent);
     if (intent === "consent") return missing("Consent choices always require your direct selection", intent);
     if (intent === "sensitive_demographic") return missing("Sensitive demographic information is never inferred or autofilled", intent);
@@ -147,12 +191,13 @@
     if (intent === "unknown") return missing("MeritOS cannot confidently identify what this question is asking. Add context or answer manually.", intent);
     const items = selectEvidence(intent, claims);
     const text = fitToOptions(safeText(items, field, intent), field);
-    return text ? { text, source: `${items.length} verified ${intent} evidence item${items.length === 1 ? "" : "s"}`, intent, kind: "evidence" } : missing(`No verified ${intent} evidence matches this question`, intent);
+    const fragment = narrativeIntents.has(intent);
+    return text ? { text, source: fragment ? `Verified ${intent} evidence fragment · use Analyze with AI for a complete answer` : `${items.length} verified ${intent} evidence item${items.length === 1 ? "" : "s"}`, intent, kind: fragment ? "evidence_preview" : "evidence" } : missing(`No verified ${intent} evidence matches this question`, intent);
   }
 
   function canDraftField(field) {
     const intent = questionIntent(field);
-    return ["research", "leadership", "project", "community", "award", "education"].includes(intent);
+    return ["research", "leadership", "project", "community", "award", "education", "education_level", "graduation_year", "grade_level"].includes(intent);
   }
 
   root.MeritOSIntelligence = { questionIntent, claimIntent, bestInstitution, suggest, canDraftField };

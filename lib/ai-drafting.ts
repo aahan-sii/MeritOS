@@ -22,7 +22,7 @@ export type DraftEvidence = {
 
 type DraftRequest = {
   field: DraftField;
-  page?: { title?: string; url?: string };
+  page?: { title?: string; url?: string; opportunityContext?: string };
   evidence: DraftEvidence[];
 };
 
@@ -33,7 +33,7 @@ export type DraftResult =
 
 type DraftBatchRequest = {
   fields: DraftField[];
-  page?: { title?: string; url?: string };
+  page?: { title?: string; url?: string; opportunityContext?: string };
   evidence: DraftEvidence[];
 };
 
@@ -76,6 +76,10 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
           "Never transfer identity/contact information into a field about a teacher, recommender, reference, supervisor, parent, guardian, or other third party.",
           "Never invent or infer credentials, grades, dates, metrics, motivations, eligibility, consent, demographics, legal status, or work authorization.",
           "For narrative fields, answer directly in a concise first-person voice while preserving evidence meaning.",
+          "For project, research, leadership, or community narratives, introduce the experience and the applicant's role first, then describe the applicant's individual action, then the supported result or learning. Never open with an isolated metric or result.",
+          "If the allowed evidence contains only a result but does not establish the applicant's role or action, return needs_input and ask for that missing contribution instead of producing a result-only answer.",
+          "Use the application page title only to understand the question context. Do not invent program-specific motivation, requirements, or facts from the title or URL.",
+          "Official opportunity context may clarify what a prompt is asking, but it is never evidence about the applicant and cannot support an applicant claim by itself.",
           "Write one cohesive answer and remove semantic repetition. Never restate the same role, metric, action, or outcome in a second sentence. Use bullets only when the field explicitly requests a list.",
           "For radio, checkbox, or select fields, draft must exactly equal one supplied option label and only when evidence directly supports it.",
           "If support is incomplete, return needs_input with one specific question. Return one result for every fieldId and only JSON matching the schema.",
@@ -84,7 +88,11 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
       {
         role: "user",
         content: JSON.stringify({
-          page: request.page || {},
+          page: {
+            title: cleanDraftingText(request.page?.title, 300),
+            url: cleanDraftingText(request.page?.url, 1_000),
+            officialOpportunityContext: cleanDraftingText(request.page?.opportunityContext, 5_000),
+          },
           verifiedEvidence: [...evidenceCatalog.values()].map((item) => ({ id: item.id, category: item.category, statement: item.statement })),
           fields: eligible.map(({ field, evidence }) => ({
             fieldId: field.id || field.label,

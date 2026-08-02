@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
-import { claims, profiles } from "@/db/schema";
+import { claims, opportunities, profiles } from "@/db/schema";
 import { extensionCorsHeaders, requireExtensionConnection } from "../_lib";
 
 export function OPTIONS() {
@@ -32,6 +32,12 @@ export async function GET(request: NextRequest) {
     .from(profiles)
     .where(eq(profiles.email, connection.connection.userEmail))
     .limit(1);
+  const [activeOpportunity] = await connection.db
+    .select({ id: opportunities.id, title: opportunities.title, organization: opportunities.organization, url: opportunities.url, deadline: opportunities.deadline })
+    .from(opportunities)
+    .where(eq(opportunities.userEmail, connection.connection.userEmail))
+    .orderBy(desc(opportunities.updatedAt))
+    .limit(1);
   const coverageAreas = [
     ["Contact details", /contact|phone|mobile|telephone|email/i],
     ["Links & profiles", /linkedin|github|portfolio|website|https?:\/\//i],
@@ -57,6 +63,7 @@ export async function GET(request: NextRequest) {
           evidence: JSON.parse(row.evidence),
         })),
         coverage,
+        activeOpportunity: activeOpportunity || null,
       },
     },
     { headers: extensionCorsHeaders },

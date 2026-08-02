@@ -36,6 +36,15 @@ export type GeneratedStory = {
   missingQuestions: string[];
 };
 
+export type GapArtifact = {
+  title: string;
+  artifactType: "outline" | "worksheet" | "plan" | "email_draft" | "portfolio_draft";
+  purpose: string;
+  content: string;
+  missingFields: Array<{ key: string; label: string; prompt: string }>;
+  sourceClaimIds: string[];
+};
+
 const STORY_LENSES = ["Leadership", "Research", "Community impact", "Resilience", "Academic curiosity", "Entrepreneurship"] as const;
 
 export type InterviewQuestion = {
@@ -265,6 +274,68 @@ Claim IDs belong only in sourceClaimIds. Never include a claim ID, bracketed cit
   story.reflection = cleanProfileText(story.reflection);
   story.missingQuestions = story.missingQuestions.map((question) => cleanProfileText(question, 500));
   return story;
+}
+
+export async function createGapArtifact(input: {
+  target: string;
+  gap: { area: string; whyItMatters: string; action: string };
+  claims: VerifiedProfileClaim[];
+}): Promise<GapArtifact> {
+  const artifact = await structuredResponse<GapArtifact>(
+    "meritos_gap_artifact",
+    {
+      type: "object",
+      additionalProperties: false,
+      required: ["title", "artifactType", "purpose", "content", "missingFields", "sourceClaimIds"],
+      properties: {
+        title: { type: "string" },
+        artifactType: { type: "string", enum: ["outline", "worksheet", "plan", "email_draft", "portfolio_draft"] },
+        purpose: { type: "string" },
+        content: { type: "string" },
+        missingFields: {
+          type: "array",
+          maxItems: 8,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["key", "label", "prompt"],
+            properties: {
+              key: { type: "string" },
+              label: { type: "string" },
+              prompt: { type: "string" },
+            },
+          },
+        },
+        sourceClaimIds: { ...stringArray, maxItems: 8 },
+      },
+    },
+    `You are MeritOS Artifact Studio. Create a truthful, useful starter that helps an applicant close one preparation gap.
+Use verified evidence only. Never create a credential, award, role, result, recommendation, publication, grade, or experience the applicant does not have.
+If the gap requires a future experience, create a practical plan, worksheet, outreach email draft, or portfolio outline rather than pretending the experience exists.
+Represent every applicant-specific detail that is not supported by evidence with a placeholder exactly like {{short_key}} and include a matching missingFields entry.
+Keep the artifact editable and immediately useful. Do not include internal claim IDs in content. Do not claim the artifact is submission-ready.`,
+    `TARGET: ${input.target}\nGAP AREA: ${input.gap.area}\nWHY IT MATTERS: ${input.gap.whyItMatters}\nSUGGESTED ACTION: ${input.gap.action}\n\nVERIFIED CLAIMS:\n${evidenceText(input.claims)}`,
+  );
+  const validIds = new Set(input.claims.map((claim) => claim.id));
+  artifact.title = cleanProfileText(artifact.title, 180);
+  artifact.purpose = cleanProfileText(artifact.purpose, 400);
+  const keyMap = new Map(artifact.missingFields.map((field, index) => [
+    field.key,
+    field.key.replace(/[^a-z0-9_]/gi, "_").toLowerCase().slice(0, 50) || `detail_${index + 1}`,
+  ]));
+  artifact.content = cleanProfileText(artifact.content, 8_000).replace(/\{\{\s*([^}]+)\s*\}\}/g, (placeholder, key: string) => {
+    const normalizedKey = keyMap.get(key.trim());
+    return normalizedKey ? `{{${normalizedKey}}}` : placeholder;
+  });
+  artifact.missingFields = artifact.missingFields
+    .map((field) => ({
+      key: keyMap.get(field.key) || field.key,
+      label: cleanProfileText(field.label, 120),
+      prompt: cleanProfileText(field.prompt, 300),
+    }))
+    .filter((field, index, list) => field.label && list.findIndex((item) => item.key === field.key) === index);
+  artifact.sourceClaimIds = artifact.sourceClaimIds.filter((claimId) => validIds.has(claimId));
+  return artifact;
 }
 
 export async function createInterviewQuestions(input: {

@@ -57,3 +57,16 @@ test("maps project, community, and awards to their matching facts", () => {
   assert.match(intelligence.suggest(field("How have you contributed to your community?"), claims, identity).text, /coding mentor/);
   assert.match(intelligence.suggest(field("List an award, achievement, or distinction."), claims, identity).text, /NCWIT/);
 });
+
+test("derives reviewable education answers from verified school evidence", () => {
+  const levelField = { ...field("Current education level", "radio"), options: [{ label: "High school" }, { label: "Undergraduate" }, { label: "Graduate" }] };
+  assert.equal(intelligence.suggest(levelField, claims, identity).text, "High school");
+  const graduationField = { ...field("Expected graduation year", "select"), options: [{ label: "2026" }, { label: "2027" }, { label: "2028" }] };
+  assert.equal(intelligence.suggest(graduationField, claims, identity).text, "2027");
+});
+
+test("labels raw narrative matches as evidence fragments rather than finished answers", () => {
+  const result = intelligence.suggest(field("Describe a project that best demonstrates your fit."), claims, identity);
+  assert.equal(result.kind, "evidence_preview");
+  assert.match(result.source, /Analyze with AI/i);
+});

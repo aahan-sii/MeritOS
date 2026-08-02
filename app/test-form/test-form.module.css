@@ -142,6 +142,20 @@
   font-weight: 700;
 }
 
+.buttonQuestion {
+  display: grid;
+  gap: 11px;
+  padding: 16px;
+  border: 1px solid #d6e0d9;
+  border-radius: 12px;
+}
+
+.buttonQuestion > strong { font-size:14px; }
+.buttonQuestion > div { display:flex;flex-wrap:wrap;gap:8px; }
+.buttonQuestion button { min-height:40px;padding:0 13px;border:1px solid #cbd7cf;border-radius:9px;color:#36554b;background:#fbfcfa;font:700 12px var(--font-sans);cursor:pointer; }
+.buttonQuestion button[aria-checked="true"] { border-color:#143f34;color:#fff;background:#143f34;box-shadow:0 0 0 3px rgba(20,63,52,.12); }
+.buttonQuestion button:focus-visible { outline:3px solid rgba(49,92,147,.22);outline-offset:2px; }
+
 .form .choice {
   display: flex;
   grid-template-columns: none;

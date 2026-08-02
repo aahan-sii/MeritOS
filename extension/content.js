@@ -7,6 +7,9 @@ const baseSelector = [
   "[role=radiogroup]",
   "[role=listbox]",
   "[role=group]",
+  "[role=radio]",
+  "[role=checkbox]",
+  "button[aria-pressed]",
 ].join(",");
 
 function visible(element) {
@@ -26,7 +29,7 @@ function labelledText(element) {
 }
 
 function questionContainer(element) {
-  return element.closest('[role="listitem"], .Qr7Oae, fieldset, .form-group, .field, .question, [data-question-id]');
+  return element.closest('[role="listitem"], .Qr7Oae, .freebirdFormviewerComponentsQuestionBaseRoot, fieldset, .form-group, .field, .question, [data-question-id]');
 }
 
 function labelFor(element) {
@@ -56,29 +59,34 @@ function optionRecord(element, index) {
 function groupOptions(element, control) {
   if (control === "select" && element instanceof HTMLSelectElement) return [...element.options].filter((option) => option.value || option.text).map((option, index) => ({ id: `${index}`, label: cleanLabel(option.text), value: option.value }));
   if (control === "select") return [...element.querySelectorAll('[role="option"]')].filter(visible).map(optionRecord).filter((option) => option.label);
-  const selector = control === "radio" ? 'input[type="radio"], [role="radio"]' : 'input[type="checkbox"], [role="checkbox"]';
-  return [...element.querySelectorAll(selector)].filter(visible).map(optionRecord).filter((option) => option.label);
+  const selector = control === "radio"
+    ? 'input[type="radio"], [role="radio"], button[aria-pressed]'
+    : 'input[type="checkbox"], [role="checkbox"], button[aria-pressed]';
+  const candidates = element.matches(selector) ? [element] : [...element.querySelectorAll(selector)];
+  return candidates.filter(visible).map(optionRecord).filter((option) => option.label);
 }
 
 function controlFor(element) {
-  if (element.matches('[role="radiogroup"]') || element.matches('input[type="radio"]') || element.querySelector('input[type="radio"], [role="radio"]')) return "radio";
+  if (element.matches('[role="radiogroup"], [role="radio"]') || element.matches('input[type="radio"]') || element.querySelector('input[type="radio"], [role="radio"]')) return "radio";
   if (element.matches('[role="listbox"]') || element instanceof HTMLSelectElement) return "select";
-  if (element.matches('[role="group"]') && element.querySelector('[role="checkbox"], input[type="checkbox"]')) return "checkbox";
-  if (element.matches('input[type="checkbox"]')) return "checkbox";
+  if (element.matches('[role="group"]') && element.querySelector('[role="checkbox"], input[type="checkbox"], button[aria-pressed]')) return "checkbox";
+  if (element.matches('input[type="checkbox"], [role="checkbox"], button[aria-pressed]')) return element.closest('[role="radiogroup"]') ? "radio" : "checkbox";
   if (element instanceof HTMLTextAreaElement) return "textarea";
   if (element.isContentEditable) return "contenteditable";
   return "text";
 }
 
 function canonicalElement(element) {
-  if (element.matches('input[type="radio"]')) {
-    return element.closest('[role="radiogroup"], fieldset, [role="listitem"], .Qr7Oae') || element;
+  if (element.matches('input[type="radio"], [role="radio"]')) {
+    return element.closest('[role="radiogroup"], fieldset, [role="listitem"], .Qr7Oae, [data-question-id]') || element;
   }
-  if (element.matches('input[type="checkbox"]')) {
+  if (element.matches('input[type="checkbox"], [role="checkbox"], button[aria-pressed]')) {
     const group = element.closest('[role="group"], fieldset');
-    if (group?.querySelectorAll('input[type="checkbox"]').length > 1) return group;
+    if (group?.querySelectorAll('input[type="checkbox"], [role="checkbox"], button[aria-pressed]').length > 1) return group;
+    const container = questionContainer(element);
+    if (container?.querySelectorAll('[role="checkbox"], button[aria-pressed]').length > 1) return container;
   }
-  if (element.matches('[role="group"]') && !element.querySelector('[role="checkbox"], input[type="checkbox"]')) return null;
+  if (element.matches('[role="group"]') && !element.querySelector('[role="checkbox"], input[type="checkbox"], button[aria-pressed]')) return null;
   return element;
 }
 
@@ -151,6 +159,9 @@ async function chooseOption(element, value, control) {
   }
   const role = control === "radio" ? "radio" : control === "checkbox" ? "checkbox" : "option";
   let roleOptions = [...element.querySelectorAll(`[role="${role}"]`)].filter(visible);
+  if (!roleOptions.length && ["radio", "checkbox"].includes(control)) {
+    roleOptions = [...element.querySelectorAll('button[aria-pressed]')].filter(visible);
+  }
   if (!roleOptions.length && control === "select") {
     element.click();
     await new Promise((resolve) => setTimeout(resolve, 120));
