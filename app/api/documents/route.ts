@@ -174,7 +174,9 @@ export async function POST(request: NextRequest) {
       evidence: JSON.stringify([{ documentId, filename: file.name, quote: sourceQuote }]),
       sensitivity: "standard" as const,
       allowedUses: "[]",
-      confidence: extraction.mode === "ai" ? 85 : 50,
+      confidence: ["Identity", "Contact details", "Links & profiles"].includes(category)
+        ? 98
+        : extraction.mode === "ai" ? 85 : 55,
       createdAt: now,
       updatedAt: now,
     }));

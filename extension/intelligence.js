@@ -4,7 +4,7 @@
     matchOption: () => null,
     thirdPartyContactQuestion: (value) => /\b(recommender|reference|teacher|counselor|mentor|supervisor|manager|parent|guardian)\b/i.test(String(value || "")),
   };
-  const narrativeIntents = new Set(["research", "leadership", "project", "community"]);
+  const narrativeIntents = new Set(["research", "leadership", "project", "community", "entrepreneurship", "nonprofit", "work", "creative", "teaching"]);
 
   function fieldText(field) {
     return `${field.label || ""} ${field.name || ""} ${field.type || ""}`.toLowerCase();
@@ -17,7 +17,7 @@
     if (thirdParty && /\b(name|full name)\b/.test(value)) return "third_party_name";
     if (thirdParty && /\b(phone|telephone|mobile|cell)\b/.test(value)) return "third_party_phone";
     if (/\b(linkedin|linked in)\b/.test(value)) return "linkedin";
-    if (/\b(personal website|portfolio(?: url| link)?|website(?: url| link)?|homepage|github(?: url| profile| link)?)\b/.test(value)) return "website";
+    if (/\b(personal website|portfolio (?:url|link)|portfolio website|website(?: url| link)?|homepage|github(?: url| profile| link)?)\b/.test(value)) return "website";
     if (/\b(phone|telephone|mobile|cell number)\b/.test(value)) return "phone";
     if (field.type === "email" || /\b(your e-?mail|applicant e-?mail|primary e-?mail|email address)\b/.test(value)) return "email";
     if (/\b(first|given) name\b/.test(value)) return "first_name";
@@ -31,6 +31,11 @@
     if (/\b(current grade|grade level|year in school|class year)\b/.test(value)) return "grade_level";
     if (/\b(school|institution|university|college|organization|organisation|employer)\b/.test(value)) return "institution";
     if (/\b(why.*apply|why.*fellowship|motivation|motivated|interest in this|personal statement|statement of purpose)\b/.test(value)) return "motivation";
+    if (/\b(startup|venture|entrepreneur|founder|co-?founder|business you (?:built|started)|company you (?:built|started))\b/.test(value)) return "entrepreneurship";
+    if (/\b(nonprofit|non-profit|charity|social impact organization|mission-driven organization)\b/.test(value)) return "nonprofit";
+    if (/\b(work experience|employment|professional experience|job responsibilities|role at|workplace|career experience)\b/.test(value)) return "work";
+    if (/\b(creative work|design process|artistic|portfolio piece|artwork|film|writing sample)\b/.test(value)) return "creative";
+    if (/\b(teaching|instruct|lesson|classroom|educat(?:ed|ing)|student learning)\b/.test(value)) return "teaching";
     if (/\b(research|laboratory|experiment|publication|academic investigation)\b/.test(value)) return "research";
     if (/\b(leadership|initiative|led a|manage|mentor|team leader)\b/.test(value)) return "leadership";
     if (/\b(project|built|developed|created|technical work|impact)\b/.test(value)) return "project";
@@ -45,6 +50,14 @@
     const value = `${category} ${claim.statement || ""}`.toLowerCase();
     if (/links?|profiles?|online presence/.test(category) || /linkedin\.com|github\.com|https?:\/\//.test(value)) return "website";
     if (/contact/.test(category) && /\b(phone|mobile|telephone)\b/.test(value)) return "phone";
+    if (/contact/.test(category) && (/\bemail\b/.test(value) || /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/.test(value))) return "email";
+    if (/^identity$/.test(category)) return "name";
+    if (/^leadership$/.test(category)) return "leadership";
+    if (/\b(startup|venture|entrepreneur|founder|founded|co-?founder|co-?founded|launched a company|business)\b/.test(value)) return "entrepreneurship";
+    if (/\b(nonprofit|non-profit|charity|philanthrop|mission-driven)\b/.test(value)) return "nonprofit";
+    if (/\b(teacher|teach|teaches|teaching|taught|tutor|tutoring|instructor|educator|lesson|classroom)\b/.test(value)) return "teaching";
+    if (/\b(artist|artistic|designer|creative|film|illustrat|portfolio piece|art installation)\b/.test(value)) return "creative";
+    if (/professional experience|employment/.test(category)) return "work";
     if (/award or distinction/.test(category) || /\b(award|honou?r(?:able)?|distinction|dean'?s list|finalist|winner|scholarship|medal|champion|gold|silver|bronze)\b/.test(value)) return "award";
     if (/community contribution/.test(category) || /\b(volunteer|community service|nonprofit|outreach|tutor(?:ed|ing)?|fundrais)\b/.test(value)) return "community";
     if (/^leadership$/.test(category) || /\b(led|founded|president|captain|chair|coordinated|organized|managed|mentored|supervised)\b/.test(value)) return "leadership";
@@ -52,6 +65,7 @@
     if (/project or impact/.test(category) || /\b(project|built|developed|designed|created|implemented|engineered|prototype|platform)\b/.test(value)) return "project";
     if (/^education$/.test(category) || /\b(university|college|academy|high school|school of|institute|degree|gpa|coursework|graduat(?:ed|ion))\b/.test(value)) return "education";
     if (/\b(motivation|reason for applying|career goal|aspire|passion)\b/.test(value)) return "motivation";
+    if (/\b(worked|employment|job|associate|specialist|consultant|engineer|analyst|manager)\b/.test(value)) return "work";
     return "unknown";
   }
 
@@ -70,10 +84,14 @@
   }
 
   function selectEvidence(intent, claims) {
-    const matches = claims.map((claim) => ({ claim, type: claimIntent(claim) })).filter((item) => item.type === intent);
+    const compatible = (type) => type === intent
+      || (intent === "nonprofit" && type === "community")
+      || (intent === "work" && type === "teaching")
+      || (intent === "creative" && type === "project");
+    const matches = claims.map((claim) => ({ claim, type: claimIntent(claim) })).filter((item) => compatible(item.type));
     if (!narrativeIntents.has(intent)) return matches.slice(0, 1);
     return matches
-      .map((item) => ({ item, score: (String(item.claim.statement || "").match(/\b\d[\d,.%$-]*/g) || []).length * 4 + Math.min(String(item.claim.statement || "").length, 500) / 100 }))
+      .map((item) => ({ item, score: (item.type === intent ? 100 : 0) + (String(item.claim.statement || "").match(/\b\d[\d,.%$-]*/g) || []).length * 4 + Math.min(String(item.claim.statement || "").length, 500) / 100 }))
       .sort((left, right) => right.score - left.score)
       .slice(0, 1)
       .map(({ item }) => item);
@@ -102,6 +120,21 @@
       if (match) return match[0];
     }
     return "";
+  }
+
+  function extractEmail(claims) {
+    for (const claim of claims) {
+      if (!/contact|email/i.test(`${claim.category} ${claim.statement}`)) continue;
+      const match = String(claim.statement || "").match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+      if (match) return match[0];
+    }
+    return "";
+  }
+
+  function extractedName(claims) {
+    const claim = claims.find((item) => /^identity$/i.test(String(item.category || "")));
+    const value = String(claim?.statement || "").replace(/^name\s*:\s*/i, "").trim();
+    return /^[A-Za-z][A-Za-z'\-.]+(?:\s+[A-Za-z][A-Za-z'\-.]+){1,4}$/.test(value) ? value : "";
   }
 
   function fitToOptions(text, field) {
@@ -152,15 +185,19 @@
     if (["third_party_email", "third_party_name", "third_party_phone"].includes(intent)) {
       return missing("This asks for someone else’s contact information. Add that person as application-specific context; MeritOS will never substitute your details.", intent);
     }
+    if (intent === "email" && extractEmail(claims)) {
+      return { text: fitToOptions(extractEmail(claims), field), source: "Imported resume contact detail · review before fill", intent, kind: "identity" };
+    }
     if (["name", "first_name", "last_name"].includes(intent)) {
-      const parts = String(identity.displayName || "").trim().split(/\s+/).filter(Boolean);
-      const name = intent === "first_name" ? parts[0] : intent === "last_name" ? parts.slice(1).join(" ") : identity.displayName;
+      const verifiedName = extractedName(claims) || String(identity.displayName || "").trim();
+      const parts = verifiedName.split(/\s+/).filter(Boolean);
+      const name = intent === "first_name" ? parts[0] : intent === "last_name" ? parts.slice(1).join(" ") : verifiedName;
       return name ? { text: fitToOptions(name, field), source: "Account profile · verified identity", intent, kind: "identity" } : missing("Add your full name in MeritOS profile settings", intent);
     }
     if (intent === "email") return identity.email ? { text: fitToOptions(identity.email, field), source: "Account profile · verified email", intent, kind: "identity" } : missing("No verified account email is available", intent);
     if (intent === "phone") {
       const phone = extractPhone(claims);
-      return phone ? { text: fitToOptions(phone, field), source: "Verified contact detail", intent, kind: "evidence" } : missing("No verified phone number is in your profile", intent);
+      return phone ? { text: fitToOptions(phone, field), source: "Imported resume contact detail · review before fill", intent, kind: "evidence" } : missing("No phone number was found in your profile", intent);
     }
     if (intent === "linkedin") {
       const url = extractUrl(claims, /linkedin\.com/i);
@@ -199,7 +236,7 @@
     const intent = questionIntent(field);
     if (["third_party_email", "third_party_name", "third_party_phone", "legal_status", "consent", "sensitive_demographic", "name", "first_name", "last_name", "email", "phone", "linkedin", "website"].includes(intent)) return false;
     if (proactive && ["motivation", "unknown"].includes(intent)) return true;
-    return ["research", "leadership", "project", "community", "award", "education", "education_level", "graduation_year", "grade_level"].includes(intent);
+    return ["research", "leadership", "project", "community", "entrepreneurship", "nonprofit", "work", "creative", "teaching", "award", "education", "education_level", "graduation_year", "grade_level"].includes(intent);
   }
 
   root.MeritOSIntelligence = { questionIntent, claimIntent, bestInstitution, suggest, canDraftField };

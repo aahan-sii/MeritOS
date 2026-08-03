@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, or } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { claims, opportunities, profiles } from "@/db/schema";
 import { extensionCorsHeaders, requireExtensionConnection } from "../_lib";
@@ -19,9 +19,21 @@ export async function GET(request: NextRequest) {
       statement: claims.statement,
       evidence: claims.evidence,
       sensitivity: claims.sensitivity,
+      status: claims.status,
+      confidence: claims.confidence,
     })
     .from(claims)
-    .where(and(eq(claims.userEmail, connection.connection.userEmail), eq(claims.status, "verified")))
+    .where(and(
+      eq(claims.userEmail, connection.connection.userEmail),
+      or(
+        eq(claims.status, "verified"),
+        and(
+          eq(claims.status, "draft"),
+          gte(claims.confidence, 95),
+          inArray(claims.category, ["Identity", "Contact details", "Links & profiles"]),
+        ),
+      ),
+    ))
     .orderBy(desc(claims.updatedAt));
   const [accountProfile] = await connection.db
     .select({

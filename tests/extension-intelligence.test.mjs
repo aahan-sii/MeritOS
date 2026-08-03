@@ -22,6 +22,18 @@ test("matches account identity fields directly", () => {
   assert.equal(intelligence.suggest(field("Email address", "email"), claims, identity).text, "aahan@example.com");
 });
 
+test("prefers verified resume identity and contact details when available", () => {
+  const resumeClaims = [
+    ...claims,
+    { category: "Identity", statement: "Maya Patel" },
+    { category: "Contact details", statement: "Email: maya.patel@example.test" },
+    { category: "Contact details", statement: "Phone: +1 (480) 555-0188" },
+  ];
+  assert.equal(intelligence.suggest(field("Full name", "text"), resumeClaims, identity).text, "Maya Patel");
+  assert.equal(intelligence.suggest(field("Applicant email address", "email"), resumeClaims, identity).text, "maya.patel@example.test");
+  assert.equal(intelligence.suggest(field("Phone number", "tel"), resumeClaims, identity).text, "+1 (480) 555-0188");
+});
+
 test("never substitutes applicant contact details for another person", () => {
   const teacher = intelligence.suggest(field("Teacher email address", "email"), claims, identity);
   assert.equal(teacher.text, "");
@@ -64,6 +76,21 @@ test("maps project, community, and awards to their matching facts", () => {
   assert.match(intelligence.suggest(field("Describe a project and the impact it created."), claims, identity).text, /Built leakage-safe/);
   assert.match(intelligence.suggest(field("How have you contributed to your community?"), claims, identity).text, /coding mentor/);
   assert.match(intelligence.suggest(field("List an award, achievement, or distinction."), claims, identity).text, /NCWIT/);
+});
+
+test("supports entrepreneurship, nonprofit, employment, teaching, and creative prompts", () => {
+  const broadClaims = [
+    { category: "Project or impact", statement: "Founded Cedar Learning and coordinated 12 tutors after interviewing 40 families." },
+    { category: "Community contribution", statement: "Led a nonprofit food program serving 300 households with 25 volunteers." },
+    { category: "Professional experience", statement: "Worked as a software engineer and shipped an accessible transit feature." },
+    { category: "Professional experience", statement: "Taught weekly algebra lessons to 16 students." },
+    { category: "Project or impact", statement: "Designed an interactive art installation from 80 oral histories." },
+  ];
+  assert.match(intelligence.suggest(field("Describe a startup you founded."), broadClaims, identity).text, /Cedar Learning/);
+  assert.match(intelligence.suggest(field("Describe your nonprofit experience."), broadClaims, identity).text, /food program/);
+  assert.match(intelligence.suggest(field("Summarize your professional work experience."), broadClaims, identity).text, /software engineer/);
+  assert.match(intelligence.suggest(field("Describe your teaching experience."), broadClaims, identity).text, /algebra lessons/);
+  assert.match(intelligence.suggest(field("Discuss a creative portfolio piece."), broadClaims, identity).text, /art installation/);
 });
 
 test("derives reviewable education answers from verified school evidence", () => {

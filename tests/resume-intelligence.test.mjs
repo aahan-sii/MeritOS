@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { bestInstitution, extractResumeEvidence } from "../lib/resume-intelligence.js";
+import { bestInstitution, extractCriticalResumeFacts, extractResumeEvidence, extractResumeProfile } from "../lib/resume-intelligence.js";
 
 const resumes = [
   {
@@ -48,4 +48,19 @@ for (const resume of resumes) {
 test("never treats coursework as the primary institution", () => {
   const evidence = extractResumeEvidence(resumes[0].text);
   assert.doesNotMatch(bestInstitution(evidence), /Coursework/i);
+});
+
+test("preserves short identity and contact lines that experience parsing used to drop", () => {
+  const text = `Maya Patel\nmaya.patel@example.test | +1 (480) 555-0188 | https://linkedin.com/in/mayapatel\nEDUCATION\nNorth Valley High School | 11th grade | Expected May 2027`;
+  const profile = extractResumeProfile(text);
+  assert.equal(profile.name, "Maya Patel");
+  assert.equal(profile.email, "maya.patel@example.test");
+  assert.equal(profile.phone, "+1 (480) 555-0188");
+  assert.equal(profile.gradeLevel, "11th grade");
+  assert.equal(profile.graduationYear, "2027");
+  const facts = extractCriticalResumeFacts(text);
+  assert.ok(facts.some((fact) => fact.category === "Identity"));
+  assert.ok(facts.some((fact) => fact.category === "Contact details" && /maya\.patel/.test(fact.statement)));
+  assert.ok(facts.some((fact) => fact.category === "Contact details" && /555-0188/.test(fact.statement)));
+  assert.ok(facts.some((fact) => fact.category === "Links & profiles"));
 });

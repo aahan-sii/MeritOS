@@ -9,7 +9,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "npm run build && node --experimental-strip-types --test tests/rendered-html.test.mjs tests/resume-intelligence.test.mjs tests/form-core.test.mjs tests/form-matrix.test.mjs tests/extension-intelligence.test.mjs tests/ai-drafting.test.mjs tests/document-facts.test.mjs tests/document-extraction-matrix.test.mjs tests/opportunity-watch.test.mjs tests/profile-intelligence.test.mjs",
+    "test": "npm run build && node --experimental-strip-types --test tests/rendered-html.test.mjs tests/resume-intelligence.test.mjs tests/resume-corpus-10000.test.mjs tests/form-core.test.mjs tests/form-matrix.test.mjs tests/form-corpus-10000.test.mjs tests/extension-intelligence.test.mjs tests/ai-drafting.test.mjs tests/document-facts.test.mjs tests/document-extraction-matrix.test.mjs tests/opportunity-watch.test.mjs tests/profile-intelligence.test.mjs",
+    "test:resume-corpus": "node --test tests/resume-corpus-10000.test.mjs tests/form-corpus-10000.test.mjs",
+    "training:build": "node scripts/build-resume-training-set.mjs --count=10000 && node scripts/build-form-training-set.mjs --count=10000",
+    "training:start": "node scripts/start-resume-finetune.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/migrate-db.mjs"

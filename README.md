@@ -31,7 +31,7 @@ This is a standard Next.js application and deploys directly through Vercel.
 5. To enable evidence-backed AI drafting, add `OPENAI_API_KEY` in Vercel. Mark it
    Sensitive and enable Production and Preview. Do not place it in the extension
    or in a `NEXT_PUBLIC_` variable. `OPENAI_MODEL` is optional; the default is
-   `gpt-5.6-terra`.
+   `gpt-5.6-sol`.
 6. Run `npm run db:migrate` locally with the production `DATABASE_URL`.
 7. Deploy. Vercel automatically runs `npm run build`.
 
@@ -58,6 +58,12 @@ The working Manifest V3 extension is in `extension/`.
    supported answers, or select **Draft with AI** for a narrative answer.
 8. Check only the answers you want, then select **Fill selected**. The extension
    never presses Submit.
+
+## Model evaluation and fine-tuning
+
+The local synthetic benchmark covers 10,000 diverse resumes and 70,000 form
+field mappings. Fine-tuning dataset generation and the cost-confirmed job
+launcher are documented in [docs/MODEL_INTELLIGENCE.md](docs/MODEL_INTELLIGENCE.md).
 
 The extension does not submit forms and does not use unverified claims.
 
