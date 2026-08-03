@@ -3,6 +3,8 @@ const state = {
   coverage: [],
   identity: { displayName: "", email: "", headline: "" },
   activeOpportunity: null,
+  proactive: true,
+  autoAnalysisKey: "",
   fields: [],
   suggestions: new Map(),
   aiSuggestions: new Map(),
@@ -31,11 +33,11 @@ function suggestionFor(field) {
 }
 
 function canUseAi(field) {
-  return globalThis.MeritOSIntelligence.canDraftField(field);
+  return globalThis.MeritOSIntelligence.canDraftField(field, state.proactive);
 }
 
 function safeForBatch(suggestion) {
-  return suggestion?.text && ["identity", "evidence"].includes(suggestion.kind);
+  return suggestion?.text && ["identity", "evidence", "inference", "ai", "ai_inference"].includes(suggestion.kind);
 }
 
 function showAssistant() {
@@ -120,6 +122,13 @@ async function scan() {
     $("fillApproved").textContent = "Fill selected";
     renderFields();
     $("scanStatus").textContent = `${state.fields.length} question${state.fields.length === 1 ? "" : "s"} mapped · profile connected across tabs`;
+    const tab = await activeTab();
+    const autoFields = state.fields.filter((field) => !state.suggestions.get(field.id)?.text && canUseAi(field)).slice(0, 20);
+    const analysisKey = `${tab?.url || result.title || ""}|${state.fields.map((field) => field.id).join("|")}|${state.claims.length}`;
+    if (state.proactive && autoFields.length && state.autoAnalysisKey !== analysisKey) {
+      state.autoAnalysisKey = analysisKey;
+      await generateDrafts(autoFields, $("analyzeMissing"), { automatic: true });
+    }
   } catch {
     state.fields = [];
     renderFields();
@@ -130,7 +139,7 @@ async function scan() {
   }
 }
 
-async function generateDrafts(fields, button) {
+async function generateDrafts(fields, button, { automatic = false } = {}) {
   if (!fields.length) return;
   button.disabled = true;
   const original = button.textContent;
@@ -140,7 +149,7 @@ async function generateDrafts(fields, button) {
     const response = await fetch(`${state.baseUrl}/api/extension/draft`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${state.token}` },
-      body: JSON.stringify({ fields, page: { title: tab?.title || "", url: tab?.url || "" } }),
+      body: JSON.stringify({ fields, mode: state.proactive ? "proactive" : "standard", page: { title: tab?.title || "", url: tab?.url || "" } }),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Could not analyze this form.");
@@ -148,11 +157,15 @@ async function generateDrafts(fields, button) {
       const field = fields[index];
       if (!field) return;
       const intent = deterministic(field).intent;
+      const assumptions = Array.isArray(result.assumptions) ? result.assumptions.filter(Boolean) : [];
+      const inferred = assumptions.length > 0 || result.confidence === "low";
+      const confidence = result.confidence || "medium";
       state.aiSuggestions.set(field.id, result.status === "draft" && result.draft
-        ? { text: result.draft, source: `AI answer grounded in ${result.usedEvidenceIds.length} verified fact${result.usedEvidenceIds.length === 1 ? "" : "s"} · review before filling`, intent, kind: "ai" }
+        ? { text: result.draft, source: `${inferred ? "Proactive inference" : "AI answer"} · ${confidence} confidence · ${result.usedEvidenceIds.length} verified fact${result.usedEvidenceIds.length === 1 ? "" : "s"}${assumptions.length ? ` · Assumption: ${assumptions.join("; ")}` : ""} · review before filling`, intent, kind: inferred ? "ai_inference" : "ai" }
         : { text: "", source: result.questions?.[0] || "More verified context is required.", intent, kind: "missing" });
     });
     renderFields();
+    $("scanStatus").textContent = automatic ? "Proactive analysis complete · review inferred answers before filling" : "AI analysis complete · review suggestions before filling";
   } catch (error) {
     $("scanStatus").textContent = error.message || "AI analysis failed safely; no fields changed.";
   } finally {
@@ -198,12 +211,19 @@ async function connect() {
 }
 
 $("connectButton").addEventListener("click", connect);
-$("rescanButton").addEventListener("click", scan);
+$("rescanButton").addEventListener("click", () => { state.autoAnalysisKey = ""; void scan(); });
 $("settingsButton").addEventListener("click", () => {
   $("connection").hidden = !$("connection").hidden;
   $("assistant").hidden = !$("assistant").hidden;
 });
 $("analyzeMissing").addEventListener("click", () => generateDrafts(state.fields.filter((field) => !state.suggestions.get(field.id)?.text && canUseAi(field)).slice(0, 20), $("analyzeMissing")));
+$("proactiveMode").addEventListener("change", async (event) => {
+  state.proactive = event.target.checked;
+  state.autoAnalysisKey = "";
+  state.aiSuggestions.clear();
+  await chrome.storage.local.set({ meritosProactive: state.proactive });
+  await scan();
+});
 $("selectAll").addEventListener("click", () => {
   state.approved = new Set(state.fields.filter((field) => safeForBatch(state.suggestions.get(field.id))).map((field) => field.id));
   renderFields();
@@ -237,7 +257,9 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
 });
 
 (async () => {
-  const stored = await chrome.storage.local.get(["meritosBaseUrl", "meritosToken", "meritosProfile"]);
+  const stored = await chrome.storage.local.get(["meritosBaseUrl", "meritosToken", "meritosProfile", "meritosProactive"]);
+  state.proactive = stored.meritosProactive !== false;
+  $("proactiveMode").checked = state.proactive;
   if (stored.meritosBaseUrl) $("baseUrl").value = stored.meritosBaseUrl;
   if (!stored.meritosToken) return;
   state.baseUrl = stored.meritosBaseUrl || $("baseUrl").value;

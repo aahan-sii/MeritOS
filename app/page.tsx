@@ -1271,7 +1271,7 @@ export default function Home() {
               <article data-reveal><b>01</b><strong>Download and unzip</strong><p>Download the MeritOS ZIP and choose Extract all.</p></article>
               <article data-reveal><b>02</b><strong>Load it in Chrome</strong><p>At chrome://extensions, enable Developer mode and choose Load unpacked.</p></article>
               <article data-reveal><b>03</b><strong>Connect your profile</strong><p>Create a one-time key below and paste it into the side panel.</p></article>
-              <article data-reveal><b>04</b><strong>Open a real form</strong><p>Approve supported suggestions together. Review narratives one by one.</p></article>
+              <article data-reveal><b>04</b><strong>Open a real form</strong><p>Proactive mode drafts low-risk gaps automatically and labels every inference for review.</p></article>
             </section>
             <section className="mos-card mos-key-card" data-reveal>
               <div><span className="mos-kicker">Private connection</span><h3>Connect this profile to Chrome</h3><p>Creating a new key revokes the previous key. MeritOS shows it only once.</p></div>
@@ -1279,7 +1279,7 @@ export default function Home() {
             </section>
             <section className="mos-safety-grid" data-reveal>
               <article><strong>It reads the visible form</strong><p>DOM and accessibility labels first—not hidden browser history.</p></article>
-              <article><strong>You approve suggestions</strong><p>Verified factual fields can be reviewed together; narratives stay individual.</p></article>
+              <article><strong>Inferences stay visible</strong><p>Low-risk guesses show their confidence and assumptions before you approve them.</p></article>
               <article><strong>It never submits</strong><p>The final submission action always remains yours.</p></article>
             </section>
           </div>

@@ -14,6 +14,16 @@ test("personal motivation prompts require applicant input instead of inference",
   const field = { label: "Why are you applying for this fellowship?", kind: "textarea", maxLength: 1200 };
   assert.equal(needsPersonalInput(field), true);
   assert.equal(canDraftField(field), false);
+  assert.equal(canDraftField(field, { proactive: true }), true);
+});
+
+test("proactive drafting can use verified direction for a disclosed motivation inference", () => {
+  const field = { label: "Why are you applying for this fellowship?", kind: "textarea" };
+  const evidence = [
+    { id: "goal", category: "Motivation & goals", statement: "I want to pursue computational biology research that improves human health." },
+    { id: "award", category: "Award", statement: "Science fair finalist." },
+  ];
+  assert.deepEqual(selectRelevantEvidence(field, evidence), [evidence[0]]);
 });
 
 test("uses short defaults for single-line answers and longer defaults for paragraphs", () => {

@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { createGroundedDraftBatch, type DraftField } from "@/lib/ai-drafting";
-import { claims, opportunities } from "@/db/schema";
+import { claims, opportunities, profiles } from "@/db/schema";
 import { extensionCorsHeaders, requireExtensionConnection } from "../_lib";
 
 export const runtime = "nodejs";
@@ -42,7 +42,8 @@ export async function POST(request: NextRequest) {
     const fields = rawFields.map(fieldFrom).filter((field): field is DraftField => Boolean(field)).slice(0, 20);
     if (!fields.length) return NextResponse.json({ error: "At least one valid application field is required." }, { status: 400, headers: extensionCorsHeaders });
     const page = body?.page && typeof body.page === "object" ? body.page as Record<string, unknown> : {};
-    const [rows, opportunityRows] = await Promise.all([connection.db
+    const proactive = body?.mode === "proactive";
+    const [claimRows, opportunityRows, [accountProfile]] = await Promise.all([connection.db
       .select({ id: claims.id, category: claims.category, statement: claims.statement })
       .from(claims)
       .where(and(eq(claims.userEmail, connection.connection.userEmail), eq(claims.status, "verified")))
@@ -52,7 +53,14 @@ export async function POST(request: NextRequest) {
       .from(opportunities)
       .where(eq(opportunities.userEmail, connection.connection.userEmail))
       .orderBy(desc(opportunities.updatedAt))
-      .limit(12)]);
+      .limit(12), connection.db
+      .select({ headline: profiles.headline })
+      .from(profiles)
+      .where(eq(profiles.email, connection.connection.userEmail))
+      .limit(1)]);
+    const rows = accountProfile?.headline?.trim()
+      ? [{ id: "profile_direction", category: "Motivation & goals", statement: accountProfile.headline.trim() }, ...claimRows]
+      : claimRows;
     const pageUrl = typeof page.url === "string" ? page.url : "";
     const pageHost = (() => { try { return new URL(pageUrl).hostname.replace(/^www\./, ""); } catch { return ""; } })();
     const activeOpportunity = opportunityRows.find((item) => {
@@ -72,6 +80,7 @@ export async function POST(request: NextRequest) {
         opportunityContext,
       },
       evidence: rows,
+      proactive,
     });
     return NextResponse.json(Array.isArray(body?.fields) ? { results } : results[0], { headers: extensionCorsHeaders });
   } catch (error) {

@@ -1,4 +1,4 @@
-# MeritOS Chrome extension v0.8.0
+# MeritOS Chrome extension v0.9.0
 
 1. Run or deploy the MeritOS web app.
 2. In Chrome, open `chrome://extensions`.

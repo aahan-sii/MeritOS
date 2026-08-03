@@ -195,8 +195,10 @@
     return text ? { text, source: fragment ? `Verified ${intent} evidence fragment · use Analyze with AI for a complete answer` : `${items.length} verified ${intent} evidence item${items.length === 1 ? "" : "s"}`, intent, kind: fragment ? "evidence_preview" : "evidence" } : missing(`No verified ${intent} evidence matches this question`, intent);
   }
 
-  function canDraftField(field) {
+  function canDraftField(field, proactive = false) {
     const intent = questionIntent(field);
+    if (["third_party_email", "third_party_name", "third_party_phone", "legal_status", "consent", "sensitive_demographic", "name", "first_name", "last_name", "email", "phone", "linkedin", "website"].includes(intent)) return false;
+    if (proactive && ["motivation", "unknown"].includes(intent)) return true;
     return ["research", "leadership", "project", "community", "award", "education", "education_level", "graduation_year", "grade_level"].includes(intent);
   }
 

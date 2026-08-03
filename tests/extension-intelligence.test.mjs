@@ -50,6 +50,14 @@ test("keeps opportunity-specific motivation blank", () => {
   const result = intelligence.suggest(field("Why are you applying for this fellowship?"), claims, identity);
   assert.equal(result.text, "");
   assert.match(result.source, /Needs your input/);
+  assert.equal(intelligence.canDraftField(field("Why are you applying for this fellowship?")), false);
+  assert.equal(intelligence.canDraftField(field("Why are you applying for this fellowship?"), true), true);
+});
+
+test("proactive mode attempts ambiguous low-risk questions but keeps protected fields blocked", () => {
+  assert.equal(intelligence.canDraftField(field("What would you bring to this cohort?"), true), true);
+  assert.equal(intelligence.canDraftField(field("Are you legally authorized to work?", "radio"), true), false);
+  assert.equal(intelligence.canDraftField(field("Teacher email address", "email"), true), false);
 });
 
 test("maps project, community, and awards to their matching facts", () => {

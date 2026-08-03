@@ -27,18 +27,19 @@ type DraftRequest = {
 };
 
 export type DraftResult =
-  | { status: "draft"; draft: string; usedEvidenceIds: string[]; questions: string[] }
-  | { status: "needs_input"; draft: ""; usedEvidenceIds: string[]; questions: string[] }
-  | { status: "not_configured"; draft: ""; usedEvidenceIds: string[]; questions: string[] };
+  | { status: "draft"; draft: string; usedEvidenceIds: string[]; questions: string[]; confidence: "high" | "medium" | "low"; assumptions: string[] }
+  | { status: "needs_input"; draft: ""; usedEvidenceIds: string[]; questions: string[]; confidence: "low"; assumptions: string[] }
+  | { status: "not_configured"; draft: ""; usedEvidenceIds: string[]; questions: string[]; confidence: "low"; assumptions: string[] };
 
 type DraftBatchRequest = {
   fields: DraftField[];
   page?: { title?: string; url?: string; opportunityContext?: string };
   evidence: DraftEvidence[];
+  proactive?: boolean;
 };
 
 function needsInput(question: string): DraftResult {
-  return { status: "needs_input", draft: "", usedEvidenceIds: [], questions: [question] };
+  return { status: "needs_input", draft: "", usedEvidenceIds: [], questions: [question], confidence: "low", assumptions: [] };
 }
 
 export async function createGroundedDraft(request: DraftRequest): Promise<DraftResult> {
@@ -49,16 +50,17 @@ export async function createGroundedDraft(request: DraftRequest): Promise<DraftR
 export async function createGroundedDraftBatch(request: DraftBatchRequest): Promise<DraftResult[]> {
   type PreparedField = { field: DraftField; immediate?: DraftResult; evidence?: DraftEvidence[] };
   const prepared: PreparedField[] = request.fields.map((field): PreparedField => {
-    if (needsPersonalInput(field)) return { field, immediate: needsInput("Why does this specific opportunity matter to you? Add your own reason in MeritOS before drafting this answer.") };
-    if (!canDraftField(field)) return { field, immediate: needsInput("This field needs application-specific or sensitive information that MeritOS will not guess.") };
-    const evidence = selectRelevantEvidence(field, request.evidence);
+    if (needsPersonalInput(field) && !request.proactive) return { field, immediate: needsInput("Why does this specific opportunity matter to you? Add your own reason in MeritOS before drafting this answer.") };
+    if (!canDraftField(field, { proactive: request.proactive })) return { field, immediate: needsInput("This field needs application-specific or sensitive information that MeritOS will not guess.") };
+    let evidence = selectRelevantEvidence(field, request.evidence);
+    if (request.proactive && needsPersonalInput(field) && !evidence.length) evidence = request.evidence.slice(0, 12);
     if (!evidence.length) return { field, immediate: needsInput("No matching verified evidence was found for this question. Add or verify a relevant fact first.") };
     return { field, evidence };
   });
   const eligible = prepared.filter((item): item is PreparedField & { evidence: DraftEvidence[] } => Boolean(item.evidence));
   if (!eligible.length) return prepared.map((item) => item.immediate || needsInput("More verified context is required."));
   if (!process.env.OPENAI_API_KEY) {
-    return prepared.map((item) => item.immediate || ({ status: "not_configured", draft: "", usedEvidenceIds: [], questions: ["AI drafting is not configured yet. Add OPENAI_API_KEY in Vercel, then redeploy."] }));
+    return prepared.map((item) => item.immediate || ({ status: "not_configured", draft: "", usedEvidenceIds: [], questions: ["AI drafting is not configured yet. Add OPENAI_API_KEY in Vercel, then redeploy."], confidence: "low", assumptions: [] }));
   }
 
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -74,12 +76,15 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
           "You are MeritOS, an evidence-bound application field analyst.",
           "Analyze every supplied field independently. The evidence catalog is shared across the form; for each field, use only evidence IDs listed in that field's allowedEvidenceIds.",
           "Never transfer identity/contact information into a field about a teacher, recommender, reference, supervisor, parent, guardian, or other third party.",
-          "Never invent or infer credentials, grades, dates, metrics, motivations, eligibility, consent, demographics, legal status, or work authorization.",
+          "Never invent credentials, grades, dates, metrics, achievements, eligibility, consent, demographics, legal status, or work authorization. Motivation may be inferred only in PROACTIVE MODE from verified applicant direction plus official opportunity context, and must be disclosed as an assumption.",
           "For narrative fields, answer directly in a concise first-person voice while preserving evidence meaning.",
           "For project, research, leadership, or community narratives, introduce the experience and the applicant's role first, then describe the applicant's individual action, then the supported result or learning. Never open with an isolated metric or result.",
           "If the allowed evidence contains only a result but does not establish the applicant's role or action, return needs_input and ask for that missing contribution instead of producing a result-only answer.",
-          "Use the application page title only to understand the question context. Do not invent program-specific motivation, requirements, or facts from the title or URL.",
+          "Use the application page title only to understand the question context. Do not invent requirements or applicant facts from the title or URL, and never infer motivation from the title alone.",
           "Official opportunity context may clarify what a prompt is asking, but it is never evidence about the applicant and cannot support an applicant claim by itself.",
+          request.proactive
+            ? "PROACTIVE MODE: Prefer a useful complete draft over asking for input when verified evidence supports a reasonable low-risk interpretation. You may infer emphasis, fit, motivation, or likely intent from the applicant's verified goals and experiences plus the official opportunity context. Record every such inference in assumptions and use medium or low confidence. Never infer new factual achievements, credentials, grades, dates, metrics, legal status, demographics, consent, or third-party information."
+            : "STANDARD MODE: If applicant intent or support is incomplete, ask for input instead of inferring it.",
           "Write one cohesive answer and remove semantic repetition. Never restate the same role, metric, action, or outcome in a second sentence. Use bullets only when the field explicitly requests a list.",
           "For radio, checkbox, or select fields, draft must exactly equal one supplied option label and only when evidence directly supports it.",
           "If support is incomplete, return needs_input with one specific question. Return one result for every fieldId and only JSON matching the schema.",
@@ -121,10 +126,11 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
               items: {
                 type: "object",
                 additionalProperties: false,
-                required: ["fieldId", "status", "draft", "usedEvidenceIds", "questions"],
+                required: ["fieldId", "status", "draft", "usedEvidenceIds", "questions", "confidence", "assumptions"],
                 properties: {
                   fieldId: { type: "string" }, status: { type: "string", enum: ["draft", "needs_input"] }, draft: { type: "string" },
                   usedEvidenceIds: { type: "array", items: { type: "string" } }, questions: { type: "array", items: { type: "string" } },
+                  confidence: { type: "string", enum: ["high", "medium", "low"] }, assumptions: { type: "array", items: { type: "string" } },
                 },
               },
             },
@@ -133,7 +139,7 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
       },
     },
   });
-  let payload: { items?: Array<{ fieldId?: string; status?: string; draft?: string; usedEvidenceIds?: unknown; questions?: unknown }> };
+  let payload: { items?: Array<{ fieldId?: string; status?: string; draft?: string; usedEvidenceIds?: unknown; questions?: unknown; confidence?: unknown; assumptions?: unknown }> };
   try { payload = JSON.parse(response.output_text); } catch { throw new Error("The drafting service returned an invalid response."); }
   const byId = new Map((payload.items || []).map((item) => [String(item.fieldId), item]));
   return prepared.map((item) => {
@@ -144,6 +150,8 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
     const validIds = new Set(evidence.map((entry) => entry.id));
     const usedEvidenceIds = Array.isArray(parsed?.usedEvidenceIds) ? parsed.usedEvidenceIds.filter((id): id is string => typeof id === "string" && validIds.has(id)) : [];
     const questions = Array.isArray(parsed?.questions) ? parsed.questions.map((question) => cleanDraftingText(question, 300)).filter(Boolean).slice(0, 2) : [];
+    const confidence = ["high", "medium", "low"].includes(String(parsed?.confidence)) ? parsed?.confidence as "high" | "medium" | "low" : "low";
+    const assumptions = Array.isArray(parsed?.assumptions) ? parsed.assumptions.map((assumption) => cleanDraftingText(assumption, 240)).filter(Boolean).slice(0, 4) : [];
     let draft = dedupeDraftText(parsed?.draft, normalizedMaxLength(item.field));
     if (Array.isArray(item.field.options) && item.field.options.length && draft) {
       const option = item.field.options.find((candidate) => {
@@ -153,7 +161,7 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
       draft = option ? (typeof option === "string" ? option : option.label || option.value || "") : "";
     }
     return parsed?.status === "draft" && draft && usedEvidenceIds.length
-      ? { status: "draft", draft, usedEvidenceIds, questions: [] }
+      ? { status: "draft", draft, usedEvidenceIds, questions: [], confidence, assumptions }
       : needsInput(questions[0] || "The verified evidence does not yet support a truthful answer to this question.");
   });
 }
