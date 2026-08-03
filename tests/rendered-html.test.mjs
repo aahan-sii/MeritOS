@@ -24,6 +24,8 @@ test("keeps MeritOS safeguards and Vercel storage configuration", () => {
   const auth = readFileSync(resolve("app/chatgpt-auth.ts"), "utf8");
   const commandCenter = readFileSync(resolve("app/page.tsx"), "utf8");
   const preflight = readFileSync(resolve("lib/opportunity-intelligence.ts"), "utf8");
+  const extensionPanel = readFileSync(resolve("extension/sidepanel.js"), "utf8");
+  const formCore = readFileSync(resolve("extension/form-core.js"), "utf8");
 
   assert.match(healthRoute, /automaticSubmission: false/);
   assert.match(healthRoute, /unsupportedClaims: "blocked"/);
@@ -32,4 +34,7 @@ test("keeps MeritOS safeguards and Vercel storage configuration", () => {
   assert.match(auth, /MERITOS_DEMO_EMAIL/);
   assert.match(commandCenter, /It never silently presses Submit/);
   assert.match(preflight, /Do not claim the applicant is eligible overall/);
+  assert.match(extensionPanel, /stopped before/);
+  assert.match(formCore, /progressActionKind/);
+  assert.match(formCore, /return "final"/);
 });

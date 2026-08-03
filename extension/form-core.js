@@ -36,5 +36,12 @@
     return /\b(recommender|recommendation|reference|referee|teacher|counselor|counsellor|mentor|supervisor|manager|principal|parent|guardian|emergency contact|contact person)\b/.test(text);
   }
 
-  root.MeritOSFormCore = { normalize, matchOption, thirdPartyContactQuestion };
+  function progressActionKind(value) {
+    const text = normalize(value);
+    if (/\b(submit|send application|finish application|complete application|apply now)\b/.test(text)) return "final";
+    if (["next", "continue", "save continue", "save and continue", "review", "review application", "proceed"].includes(text)) return "next";
+    return "";
+  }
+
+  root.MeritOSFormCore = { normalize, matchOption, thirdPartyContactQuestion, progressActionKind };
 })(globalThis);

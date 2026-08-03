@@ -196,3 +196,27 @@
   font-weight: 700;
   cursor: not-allowed;
 }
+
+.reviewButton {
+  min-height: 48px;
+  margin-top: 8px;
+  border: 1px solid #143f34;
+  border-radius: 10px;
+  background: #143f34;
+  color: white;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.finalReview {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 18px;
+  border: 1px solid #d7b477;
+  border-radius: 14px;
+  background: #fff9ed;
+}
+
+.finalReview strong { font: 600 20px/1.2 var(--font-serif); }
+.finalReview p { margin: 0; color: #6f6047; font-size: 13px; }

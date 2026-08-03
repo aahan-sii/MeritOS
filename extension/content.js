@@ -183,6 +183,69 @@ async function setField(id, value) {
   return setNativeText(element, value);
 }
 
+function clearReviewHighlights() {
+  document.querySelectorAll("[data-meritos-review-status]").forEach((element) => {
+    element.removeAttribute("data-meritos-review-status");
+    element.removeAttribute("data-meritos-review-note");
+  });
+  document.getElementById("meritos-run-review-host")?.remove();
+  document.getElementById("meritos-run-review-style")?.remove();
+}
+
+function highlightReview(items = [], summary = {}) {
+  clearReviewHighlights();
+  const style = document.createElement("style");
+  style.id = "meritos-run-review-style";
+  style.textContent = `
+    [data-meritos-review-status="missing"]{outline:3px solid #d98b35!important;outline-offset:4px!important;box-shadow:0 0 0 8px rgba(217,139,53,.14)!important}
+    [data-meritos-review-status="review"]{outline:3px solid #6b64e8!important;outline-offset:4px!important;box-shadow:0 0 0 8px rgba(107,100,232,.12)!important}
+    @media(prefers-reduced-motion:no-preference){[data-meritos-review-status]{transition:outline-color .2s,box-shadow .2s}}
+  `;
+  document.documentElement.append(style);
+  let firstMissing = null;
+  for (const item of items) {
+    const element = document.querySelector(`[data-meritos-field-id="${CSS.escape(item.fieldId)}"]`);
+    if (!element) continue;
+    element.setAttribute("data-meritos-review-status", item.status === "review" ? "review" : "missing");
+    element.setAttribute("data-meritos-review-note", cleanLabel(item.message || "Needs your review"));
+    if (!firstMissing && item.status !== "review") firstMissing = element;
+  }
+  const host = document.createElement("div");
+  host.id = "meritos-run-review-host";
+  host.style.cssText = "position:fixed;right:20px;top:20px;z-index:2147483647";
+  const root = host.attachShadow({ mode: "open" });
+  root.innerHTML = `<style>
+    .card{width:min(310px,calc(100vw - 40px));padding:14px 15px;border:1px solid #d7a25f;border-radius:16px;background:#fffaf0;color:#173b31;box-shadow:0 18px 48px #173b3133;font:500 12px/1.4 ui-sans-serif,system-ui}
+    .top{display:flex;align-items:flex-start;gap:11px}.mark{width:30px;height:30px}.copy{flex:1}.copy b{display:block;font-size:13px}.copy span{display:block;margin-top:3px;color:#715d42}.close{border:0;background:transparent;color:#5d7169;font-size:18px;cursor:pointer}.key{display:flex;gap:12px;margin-top:10px;padding-top:9px;border-top:1px solid #ead9bc;color:#6f6049;font-size:10px}.dot{display:inline-block;width:8px;height:8px;margin-right:4px;border-radius:50%;background:#d98b35}.dot.review{background:#6b64e8}
+  </style><div class="card"><div class="top"><img class="mark" src="${chrome.runtime.getURL("meritos-mark-v2.png")}" alt=""><div class="copy"><b>Application prepared for review</b><span>${Number(summary.filled || 0)} filled · ${Number(summary.missing || 0)} missing · MeritOS did not submit</span></div><button class="close" aria-label="Dismiss review summary">×</button></div><div class="key"><span><i class="dot"></i>Needs information</span><span><i class="dot review"></i>Verify inference</span></div></div>`;
+  root.querySelector(".close")?.addEventListener("click", () => host.remove());
+  document.documentElement.append(host);
+  if (firstMissing) firstMissing.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
+  return { highlighted: items.length };
+}
+
+function progressActions() {
+  const candidates = [...document.querySelectorAll('button, input[type="button"], input[type="submit"], [role="button"], a[href]')]
+    .filter((element) => visible(element) && !element.disabled && element.getAttribute("aria-disabled") !== "true")
+    .map((element) => ({ element, label: cleanLabel(element.innerText || element.value || element.getAttribute("aria-label")) }))
+    .filter((item) => item.label);
+  const safeNext = candidates.find((item) => MeritForm.progressActionKind(item.label) === "next");
+  const finalAction = candidates.find((item) => MeritForm.progressActionKind(item.label) === "final");
+  return {
+    next: safeNext ? { found: true, label: safeNext.label } : { found: false, label: "" },
+    final: finalAction ? { found: true, label: finalAction.label } : { found: false, label: "" },
+  };
+}
+
+function clickSafeNext() {
+  const candidates = [...document.querySelectorAll('button, input[type="button"], input[type="submit"], [role="button"], a[href]')]
+    .filter((element) => visible(element) && !element.disabled && element.getAttribute("aria-disabled") !== "true");
+  const target = candidates.find((element) => MeritForm.progressActionKind(cleanLabel(element.innerText || element.value || element.getAttribute("aria-label"))) === "next");
+  if (!target) return false;
+  window.setTimeout(() => target.click(), 60);
+  return true;
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "MERITOS_SCAN") {
     sendResponse({ fields: scan(), title: document.title, url: location.href });
@@ -196,6 +259,23 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     Promise.all((message.items || []).map(async (item) => ({ fieldId: item.fieldId, filled: await setField(item.fieldId, item.value) })))
       .then((results) => sendResponse({ results }));
     return true;
+  }
+  if (message?.type === "MERITOS_HIGHLIGHT_REVIEW") {
+    sendResponse(highlightReview(message.items || [], message.summary || {}));
+    return;
+  }
+  if (message?.type === "MERITOS_CLEAR_REVIEW") {
+    clearReviewHighlights();
+    sendResponse({ cleared: true });
+    return;
+  }
+  if (message?.type === "MERITOS_PROGRESS_ACTIONS") {
+    sendResponse(progressActions());
+    return;
+  }
+  if (message?.type === "MERITOS_CLICK_SAFE_NEXT") {
+    sendResponse({ clicked: clickSafeNext() });
+    return;
   }
 });
 

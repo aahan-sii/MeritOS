@@ -11,6 +11,9 @@ const state = {
   approved: new Set(),
   baseUrl: "",
   token: "",
+  applicationRun: null,
+  runBusy: false,
+  lastRunReport: null,
 };
 const $ = (id) => document.getElementById(id);
 
@@ -40,6 +43,11 @@ function safeForBatch(suggestion) {
   return suggestion?.text && ["identity", "evidence", "inference", "ai", "ai_inference"].includes(suggestion.kind);
 }
 
+function needsAiCompletion(field) {
+  const suggestion = state.suggestions.get(field.id);
+  return canUseAi(field) && (!suggestion?.text || suggestion.kind === "evidence_preview");
+}
+
 function showAssistant() {
   $("connection").hidden = true;
   $("assistant").hidden = false;
@@ -56,9 +64,14 @@ function hydrateProfile(profile) {
   state.coverage = profile?.coverage || [];
   state.identity = profile?.identity || state.identity;
   state.activeOpportunity = profile?.activeOpportunity || null;
+  window.setTimeout(hydrateRunUrl, 0);
   $("opportunityContext").hidden = !state.activeOpportunity;
   $("opportunityTitle").textContent = state.activeOpportunity?.title || "";
   $("opportunityOrganization").textContent = state.activeOpportunity ? `${state.activeOpportunity.organization}${state.activeOpportunity.deadline ? ` · ${new Date(state.activeOpportunity.deadline).toLocaleDateString()}` : ""}` : "";
+}
+
+function hydrateRunUrl() {
+  if (!$("runUrl").value && state.activeOpportunity?.url) $("runUrl").value = state.activeOpportunity.url;
 }
 
 function updateCounts() {
@@ -67,7 +80,7 @@ function updateCounts() {
   $("missingCount").textContent = Math.max(0, state.fields.length - supported);
   $("approvedCount").textContent = state.approved.size;
   $("fillApproved").disabled = state.approved.size === 0;
-  $("analyzeMissing").disabled = !state.fields.some((field) => !state.suggestions.get(field.id)?.text && canUseAi(field));
+  $("analyzeMissing").disabled = !state.fields.some(needsAiCompletion);
 }
 
 function renderFields() {
@@ -110,6 +123,166 @@ function renderFields() {
   updateCounts();
 }
 
+function normalizedRunUrl(value) {
+  const candidate = String(value || "").trim();
+  if (!candidate) return "";
+  try {
+    const url = new URL(/^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function renderApplicationRun() {
+  const run = state.applicationRun;
+  const report = state.lastRunReport;
+  const active = Boolean(run?.active);
+  const phase = run?.phase || "ready";
+  $("runProgress").hidden = !run;
+  $("resumeRun").hidden = !run || (active && !["paused", "review"].includes(phase));
+  $("startRun").disabled = state.runBusy;
+  $("runBadge").textContent = state.runBusy ? "Working" : phase === "paused" ? "Needs you" : phase === "review" ? "Review" : active ? "Running" : "Ready";
+  $("runBadge").className = `run-badge ${state.runBusy || active ? "working" : ""} ${phase === "paused" ? "blocked" : ""}`.trim();
+  $("runStatus").textContent = run?.message || "Ready to prepare an application.";
+  $("runSummary").textContent = report ? `${report.filled} filled · ${report.missing.length} missing · ${report.review.length} verify` : "MeritOS stops before Submit.";
+  $("runReport").hidden = !report || (!report.missing.length && !report.review.length);
+  $("runMissing").innerHTML = "";
+  for (const item of [...(report?.missing || []), ...(report?.review || [])]) {
+    const row = document.createElement("li");
+    row.textContent = `${item.required ? "Required: " : item.kind === "review" ? "Verify: " : ""}${item.label}${item.reason ? ` — ${item.reason}` : ""}`;
+    $("runMissing").append(row);
+  }
+}
+
+async function persistApplicationRun() {
+  await chrome.storage.local.set({ meritosApplicationRun: state.applicationRun, meritosApplicationRunReport: state.lastRunReport });
+  renderApplicationRun();
+}
+
+function fieldHasUserValue(field) {
+  if (["radio", "checkbox", "select"].includes(field.control)) return false;
+  const value = String(field.currentValue || "").trim();
+  return value.length > 0 && value !== field.label && value !== "Unlabelled field";
+}
+
+async function startApplicationRun() {
+  const url = normalizedRunUrl($("runUrl").value || state.activeOpportunity?.url);
+  if (!url) {
+    state.applicationRun = { active: false, phase: "paused", message: "Enter a valid application URL first.", steps: 0, autoContinue: $("autoContinueRun").checked };
+    await persistApplicationRun();
+    return;
+  }
+  const tab = await activeTab();
+  if (!tab?.id) return;
+  state.lastRunReport = null;
+  state.applicationRun = {
+    active: true,
+    phase: "opening",
+    message: "Opening the application…",
+    url,
+    tabId: tab.id,
+    steps: 0,
+    autoContinue: $("autoContinueRun").checked,
+    startedAt: new Date().toISOString(),
+  };
+  await persistApplicationRun();
+  await chrome.tabs.update(tab.id, { url, active: true });
+}
+
+async function stopApplicationRun(message = "Application Run ended. The prepared form remains open for review.") {
+  if (!state.applicationRun) return;
+  state.applicationRun = { ...state.applicationRun, active: false, phase: "review", message };
+  await persistApplicationRun();
+}
+
+async function resumeApplicationRun() {
+  const tab = await activeTab();
+  if (!tab?.id) return;
+  state.applicationRun = {
+    ...(state.applicationRun || {}),
+    active: true,
+    phase: "running",
+    message: "Checking your updates and preparing this page…",
+    tabId: tab.id,
+    autoContinue: $("autoContinueRun").checked,
+  };
+  await persistApplicationRun();
+  await executeApplicationRun();
+}
+
+async function executeApplicationRun() {
+  const run = state.applicationRun;
+  if (!run?.active || state.runBusy) return;
+  const tab = await activeTab();
+  if (!tab?.id || (run.tabId && tab.id !== run.tabId)) return;
+  state.runBusy = true;
+  state.applicationRun = { ...run, phase: "running", message: `Preparing page ${(run.steps || 0) + 1}…` };
+  renderApplicationRun();
+  try {
+    await scan();
+    if (!state.fields.length) {
+      state.applicationRun = { ...state.applicationRun, active: false, phase: "paused", message: "No application fields were detected. Sign in or open the actual form, then press Resume." };
+      return;
+    }
+
+    const existing = new Set(state.fields.filter(fieldHasUserValue).map((field) => field.id));
+    const fillable = state.fields.filter((field) => !existing.has(field.id) && safeForBatch(state.suggestions.get(field.id)));
+    const items = fillable.map((field) => ({ fieldId: field.id, value: state.suggestions.get(field.id).text }));
+    const fillResult = items.length ? await sendToPage({ type: "MERITOS_FILL_MANY", items }) : { results: [] };
+    const filledIds = new Set((fillResult.results || []).filter((item) => item.filled).map((item) => item.fieldId));
+    const failedIds = new Set((fillResult.results || []).filter((item) => !item.filled).map((item) => item.fieldId));
+    const missing = state.fields
+      .filter((field) => !existing.has(field.id) && (!state.suggestions.get(field.id)?.text || failedIds.has(field.id)))
+      .map((field) => ({ fieldId: field.id, label: field.label, required: Boolean(field.required), kind: "missing", reason: failedIds.has(field.id) ? "This control could not be filled automatically" : state.suggestions.get(field.id)?.source || "More profile context is needed" }));
+    const review = state.fields
+      .filter((field) => ["inference", "ai_inference"].includes(state.suggestions.get(field.id)?.kind) && (filledIds.has(field.id) || existing.has(field.id)))
+      .map((field) => ({ fieldId: field.id, label: field.label, required: Boolean(field.required), kind: "review", reason: "MeritOS made a disclosed inference" }));
+    const report = {
+      pageTitle: $("pageTitle").textContent || tab.title || "Application",
+      url: tab.url || run.url,
+      step: (run.steps || 0) + 1,
+      total: state.fields.length,
+      filled: filledIds.size,
+      preserved: existing.size,
+      missing,
+      review,
+      createdAt: new Date().toISOString(),
+    };
+    state.lastRunReport = report;
+    await sendToPage({
+      type: "MERITOS_HIGHLIGHT_REVIEW",
+      items: [...missing.map((item) => ({ ...item, status: "missing", message: item.reason })), ...review.map((item) => ({ ...item, status: "review", message: item.reason }))],
+      summary: { filled: report.filled + report.preserved, missing: missing.length },
+    });
+
+    const requiredMissing = missing.filter((item) => item.required);
+    const actions = await sendToPage({ type: "MERITOS_PROGRESS_ACTIONS" });
+    if (!requiredMissing.length && actions?.next?.found && state.applicationRun.autoContinue && (run.steps || 0) < 8) {
+      state.applicationRun = { ...state.applicationRun, steps: (run.steps || 0) + 1, phase: "running", message: `${report.filled} answers filled. Continuing through “${actions.next.label}”…` };
+      await persistApplicationRun();
+      const progressed = await sendToPage({ type: "MERITOS_CLICK_SAFE_NEXT" });
+      if (progressed?.clicked) {
+        window.setTimeout(() => executeApplicationRun(), 1500);
+        return;
+      }
+    }
+
+    if (requiredMissing.length) {
+      state.applicationRun = { ...state.applicationRun, active: false, phase: "paused", message: `${requiredMissing.length} required answer${requiredMissing.length === 1 ? " needs" : "s need"} you. Complete the highlighted fields, then press Resume.` };
+    } else if (actions?.final?.found) {
+      state.applicationRun = { ...state.applicationRun, active: false, phase: "review", message: `Prepared for final review. MeritOS stopped before “${actions.final.label}”.` };
+    } else {
+      state.applicationRun = { ...state.applicationRun, active: false, phase: "review", message: "This page is prepared. Review highlighted answers and submit only when you are satisfied." };
+    }
+  } catch (error) {
+    state.applicationRun = { ...state.applicationRun, active: false, phase: "paused", message: error.message || "The application changed during the run. Press Resume to try this page again." };
+  } finally {
+    state.runBusy = false;
+    await persistApplicationRun();
+  }
+}
+
 async function scan() {
   $("scanStatus").textContent = "Scanning page…";
   $("rescanButton").disabled = true;
@@ -123,7 +296,7 @@ async function scan() {
     renderFields();
     $("scanStatus").textContent = `${state.fields.length} question${state.fields.length === 1 ? "" : "s"} mapped · profile connected across tabs`;
     const tab = await activeTab();
-    const autoFields = state.fields.filter((field) => !state.suggestions.get(field.id)?.text && canUseAi(field)).slice(0, 20);
+    const autoFields = state.fields.filter(needsAiCompletion).slice(0, 20);
     const analysisKey = `${tab?.url || result.title || ""}|${state.fields.map((field) => field.id).join("|")}|${state.claims.length}`;
     if (state.proactive && autoFields.length && state.autoAnalysisKey !== analysisKey) {
       state.autoAnalysisKey = analysisKey;
@@ -211,12 +384,33 @@ async function connect() {
 }
 
 $("connectButton").addEventListener("click", connect);
+$("startRun").addEventListener("click", () => void startApplicationRun());
+$("resumeRun").addEventListener("click", () => void resumeApplicationRun());
+$("stopRun").addEventListener("click", () => void stopApplicationRun());
+$("autoContinueRun").addEventListener("change", async (event) => {
+  if (!state.applicationRun) return;
+  state.applicationRun = { ...state.applicationRun, autoContinue: event.target.checked };
+  await persistApplicationRun();
+});
+$("copyRunReport").addEventListener("click", async () => {
+  const report = state.lastRunReport;
+  if (!report) return;
+  const lines = [
+    `${report.pageTitle} — MeritOS review checklist`,
+    `${report.filled} filled, ${report.preserved || 0} preserved, ${report.missing.length} missing, ${report.review.length} to verify`,
+    ...report.missing.map((item) => `- ${item.required ? "REQUIRED: " : ""}${item.label}: ${item.reason}`),
+    ...report.review.map((item) => `- VERIFY: ${item.label}: ${item.reason}`),
+  ];
+  await navigator.clipboard.writeText(lines.join("\n"));
+  $("copyRunReport").textContent = "Copied";
+  window.setTimeout(() => { $("copyRunReport").textContent = "Copy checklist"; }, 1200);
+});
 $("rescanButton").addEventListener("click", () => { state.autoAnalysisKey = ""; void scan(); });
 $("settingsButton").addEventListener("click", () => {
   $("connection").hidden = !$("connection").hidden;
   $("assistant").hidden = !$("assistant").hidden;
 });
-$("analyzeMissing").addEventListener("click", () => generateDrafts(state.fields.filter((field) => !state.suggestions.get(field.id)?.text && canUseAi(field)).slice(0, 20), $("analyzeMissing")));
+$("analyzeMissing").addEventListener("click", () => generateDrafts(state.fields.filter(needsAiCompletion).slice(0, 20), $("analyzeMissing")));
 $("proactiveMode").addEventListener("change", async (event) => {
   state.proactive = event.target.checked;
   state.autoAnalysisKey = "";
@@ -249,17 +443,27 @@ $("fillApproved").addEventListener("click", async () => {
   }
 });
 
-chrome.tabs.onActivated.addListener(() => window.setTimeout(scan, 180));
+chrome.tabs.onActivated.addListener(({ tabId }) => window.setTimeout(() => {
+  if (state.applicationRun?.active && (!state.applicationRun.tabId || state.applicationRun.tabId === tabId)) void executeApplicationRun();
+  else void scan();
+}, 180));
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   if (changeInfo.status !== "complete") return;
   const tab = await activeTab();
-  if (tab?.id === tabId) scan();
+  if (tab?.id !== tabId) return;
+  if (state.applicationRun?.active && (!state.applicationRun.tabId || state.applicationRun.tabId === tabId)) void executeApplicationRun();
+  else void scan();
 });
 
 (async () => {
-  const stored = await chrome.storage.local.get(["meritosBaseUrl", "meritosToken", "meritosProfile", "meritosProactive"]);
+  const stored = await chrome.storage.local.get(["meritosBaseUrl", "meritosToken", "meritosProfile", "meritosProactive", "meritosApplicationRun", "meritosApplicationRunReport"]);
   state.proactive = stored.meritosProactive !== false;
+  state.applicationRun = stored.meritosApplicationRun || null;
+  state.lastRunReport = stored.meritosApplicationRunReport || null;
   $("proactiveMode").checked = state.proactive;
+  $("autoContinueRun").checked = state.applicationRun?.autoContinue !== false;
+  if (state.applicationRun?.url) $("runUrl").value = state.applicationRun.url;
+  renderApplicationRun();
   if (stored.meritosBaseUrl) $("baseUrl").value = stored.meritosBaseUrl;
   if (!stored.meritosToken) return;
   state.baseUrl = stored.meritosBaseUrl || $("baseUrl").value;

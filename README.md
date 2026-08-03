@@ -59,6 +59,14 @@ The working Manifest V3 extension is in `extension/`.
 8. Check only the answers you want, then select **Fill selected**. The extension
    never presses Submit.
 
+### Application Run
+
+In extension v0.11.0, paste a specific application URL into **Application Run**
+and choose **Prepare**. MeritOS opens the form, fills supported empty fields,
+continues through buttons explicitly labeled Next, Continue, Proceed, or Review,
+and stops when required information is missing or a final Submit action is
+detected. Missing fields and AI inferences are highlighted on the original page.
+
 ## Model evaluation and fine-tuning
 
 The local synthetic benchmark covers 10,000 diverse resumes and 70,000 form

@@ -17,13 +17,14 @@ type ScenarioKey = keyof typeof scenarios;
 export default function TestFormLab() {
   const [scenarioKey, setScenarioKey] = useState<ScenarioKey>("internship");
   const [gradeLevel, setGradeLevel] = useState("");
+  const [reviewStep, setReviewStep] = useState(false);
   const scenario = scenarios[scenarioKey];
   return (
     <main className={styles.page}>
       <header className={styles.header}><Link href="/">← Back to MeritOS</Link><span>Safe form testing lab</span></header>
       <section className={styles.intro}>
         <span>Practice only · nothing is submitted</span><h1>{scenario.title}</h1><p>Switch between realistic form types, open the MeritOS side panel, and test question detection, AI analysis, selection controls, and batch fill.</p>
-        <nav className={styles.scenarios} aria-label="Choose a test form">{Object.entries(scenarios).map(([key, item]) => <button type="button" key={key} className={scenarioKey === key ? styles.active : ""} onClick={() => setScenarioKey(key as ScenarioKey)}>{item.label}</button>)}</nav>
+        <nav className={styles.scenarios} aria-label="Choose a test form">{Object.entries(scenarios).map(([key, item]) => <button type="button" key={key} className={scenarioKey === key ? styles.active : ""} onClick={() => { setScenarioKey(key as ScenarioKey); setReviewStep(false); }}>{item.label}</button>)}</nav>
       </section>
       <form className={styles.form} key={scenarioKey}>
         <div className={styles.formHeading}><span>{scenario.organization}</span><strong>{scenario.title}</strong><small>Required questions are marked with an asterisk.</small></div>
@@ -48,7 +49,11 @@ export default function TestFormLab() {
         <label>Teacher, recommender, or supervisor email<input name="reference_email" type="email" /><small>MeritOS should never insert your own email here.</small></label>
         <label>Why are you applying to this specific opportunity? *<textarea name="specific_motivation" rows={5} maxLength={1200} required /><small>This should remain blank unless you added opportunity-specific motivation context.</small></label>
         <fieldset><legend>Can we contact you about this practice application?</legend><label className={styles.choice}><input type="radio" name="contact_consent" value="Yes" />Yes</label><label className={styles.choice}><input type="radio" name="contact_consent" value="No" />No</label></fieldset>
-        <button type="button" className={styles.disabledButton}>Practice form — submission disabled</button>
+        {reviewStep ? (
+          <div className={styles.finalReview}><strong>Final review reached</strong><p>Application Run should stop here, highlight anything missing above, and leave this final action entirely to you.</p><button type="button" className={styles.disabledButton}>Submit application</button></div>
+        ) : (
+          <button type="button" className={styles.reviewButton} onClick={() => setReviewStep(true)}>Review application</button>
+        )}
       </form>
     </main>
   );
