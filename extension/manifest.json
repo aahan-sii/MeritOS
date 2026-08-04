@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MeritOS Application Assistant",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Prepare application forms from your evidence, highlight missing answers, and stop before submission.",
   "permissions": ["sidePanel", "storage", "activeTab", "tabs"],
   "host_permissions": ["http://localhost:3000/*", "https://*/*"],

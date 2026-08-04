@@ -61,8 +61,10 @@ The working Manifest V3 extension is in `extension/`.
 
 ### Application Run
 
-In extension v0.11.0, paste a specific application URL into **Application Run**
-and choose **Prepare**. MeritOS opens the form, fills supported empty fields,
+In extension v0.12.0, describe the internship or program you want in **Application Run**.
+MeritOS searches live public listings, ranks matches against your verified profile,
+and lets you queue selected applications without manually pasting their URLs.
+Choose **Prepare selected**. MeritOS opens each form, fills supported empty fields,
 continues through buttons explicitly labeled Next, Continue, Proceed, or Review,
 and stops when required information is missing or a final Submit action is
 detected. Missing fields and AI inferences are highlighted on the original page.

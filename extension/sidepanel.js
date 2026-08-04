@@ -14,6 +14,8 @@ const state = {
   applicationRun: null,
   runBusy: false,
   lastRunReport: null,
+  runResults: [],
+  selectedRuns: new Set(),
 };
 const $ = (id) => document.getElementById(id);
 
@@ -64,14 +66,9 @@ function hydrateProfile(profile) {
   state.coverage = profile?.coverage || [];
   state.identity = profile?.identity || state.identity;
   state.activeOpportunity = profile?.activeOpportunity || null;
-  window.setTimeout(hydrateRunUrl, 0);
   $("opportunityContext").hidden = !state.activeOpportunity;
   $("opportunityTitle").textContent = state.activeOpportunity?.title || "";
   $("opportunityOrganization").textContent = state.activeOpportunity ? `${state.activeOpportunity.organization}${state.activeOpportunity.deadline ? ` · ${new Date(state.activeOpportunity.deadline).toLocaleDateString()}` : ""}` : "";
-}
-
-function hydrateRunUrl() {
-  if (!$("runUrl").value && state.activeOpportunity?.url) $("runUrl").value = state.activeOpportunity.url;
 }
 
 function updateCounts() {
@@ -123,15 +120,43 @@ function renderFields() {
   updateCounts();
 }
 
-function normalizedRunUrl(value) {
-  const candidate = String(value || "").trim();
-  if (!candidate) return "";
-  try {
-    const url = new URL(/^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`);
-    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
-  } catch {
-    return "";
+function renderRunResults(message = "") {
+  const root = $("runResults");
+  root.hidden = false;
+  root.innerHTML = "";
+  if (!state.runResults.length) {
+    root.innerHTML = `<div class="run-search-note">${message || "No live matches found. Try a broader field, location, or student level."}</div>`;
+    $("startRun").hidden = true;
+    return;
   }
+  state.runResults.forEach((item, index) => {
+    const row = document.createElement("label");
+    row.className = "run-result";
+    row.innerHTML = '<input type="checkbox"><div><strong></strong><small></small></div><span class="run-fit"></span>';
+    row.querySelector("strong").textContent = `${item.title} · ${item.company}`;
+    row.querySelector("small").textContent = `${item.location} · ${item.source}`;
+    row.querySelector(".run-fit").textContent = `${item.fitScore}% fit`;
+    const input = row.querySelector("input");
+    input.checked = state.selectedRuns.has(index);
+    input.addEventListener("change", () => { input.checked ? state.selectedRuns.add(index) : state.selectedRuns.delete(index); $("startRun").hidden = state.selectedRuns.size === 0; $("startRun").textContent = `Prepare ${state.selectedRuns.size} selected`; });
+    root.append(row);
+  });
+  $("startRun").hidden = state.selectedRuns.size === 0;
+}
+
+async function searchApplicationRuns() {
+  const query = $("runQuery").value.trim();
+  if (query.length < 5) return renderRunResults("Describe a field, program type, timing, or location first.");
+  $("searchRuns").disabled = true; $("searchRuns").textContent = "Searching…";
+  renderRunResults("Searching live public opportunity boards…");
+  try {
+    const response = await fetch(`${state.baseUrl}/api/extension/discover`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${state.token}` }, body: JSON.stringify({ query }) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Search failed.");
+    state.runResults = data.items || []; state.selectedRuns = new Set(state.runResults.slice(0, 3).map((_, index) => index));
+    renderRunResults(); $("startRun").textContent = `Prepare ${state.selectedRuns.size} selected`;
+  } catch (error) { state.runResults = []; state.selectedRuns.clear(); renderRunResults(error.message || "Search failed."); }
+  finally { $("searchRuns").disabled = false; $("searchRuns").textContent = "Find"; }
 }
 
 function renderApplicationRun() {
@@ -141,11 +166,12 @@ function renderApplicationRun() {
   const phase = run?.phase || "ready";
   $("runProgress").hidden = !run;
   $("resumeRun").hidden = !run || (active && !["paused", "review"].includes(phase));
+  $("resumeRun").textContent = phase === "review" && run?.queue?.length ? `Next (${run.queue.length})` : "Resume";
   $("startRun").disabled = state.runBusy;
   $("runBadge").textContent = state.runBusy ? "Working" : phase === "paused" ? "Needs you" : phase === "review" ? "Review" : active ? "Running" : "Ready";
   $("runBadge").className = `run-badge ${state.runBusy || active ? "working" : ""} ${phase === "paused" ? "blocked" : ""}`.trim();
   $("runStatus").textContent = run?.message || "Ready to prepare an application.";
-  $("runSummary").textContent = report ? `${report.filled} filled · ${report.missing.length} missing · ${report.review.length} verify` : "MeritOS stops before Submit.";
+  $("runSummary").textContent = report ? `${report.filled} filled · ${report.missing.length} missing · ${report.review.length} verify${run?.queue?.length ? ` · ${run.queue.length} queued` : ""}` : "MeritOS stops before Submit.";
   $("runReport").hidden = !report || (!report.missing.length && !report.review.length);
   $("runMissing").innerHTML = "";
   for (const item of [...(report?.missing || []), ...(report?.review || [])]) {
@@ -167,9 +193,9 @@ function fieldHasUserValue(field) {
 }
 
 async function startApplicationRun() {
-  const url = normalizedRunUrl($("runUrl").value || state.activeOpportunity?.url);
-  if (!url) {
-    state.applicationRun = { active: false, phase: "paused", message: "Enter a valid application URL first.", steps: 0, autoContinue: $("autoContinueRun").checked };
+  const selected = [...state.selectedRuns].map((index) => state.runResults[index]).filter(Boolean);
+  if (!selected.length) {
+    state.applicationRun = { active: false, phase: "paused", message: "Find and select at least one opportunity first.", steps: 0, autoContinue: $("autoContinueRun").checked };
     await persistApplicationRun();
     return;
   }
@@ -180,14 +206,16 @@ async function startApplicationRun() {
     active: true,
     phase: "opening",
     message: "Opening the application…",
-    url,
+    url: selected[0].url,
+    opportunity: selected[0],
+    queue: selected.slice(1),
     tabId: tab.id,
     steps: 0,
     autoContinue: $("autoContinueRun").checked,
     startedAt: new Date().toISOString(),
   };
   await persistApplicationRun();
-  await chrome.tabs.update(tab.id, { url, active: true });
+  await chrome.tabs.update(tab.id, { url: selected[0].url, active: true });
 }
 
 async function stopApplicationRun(message = "Application Run ended. The prepared form remains open for review.") {
@@ -199,6 +227,14 @@ async function stopApplicationRun(message = "Application Run ended. The prepared
 async function resumeApplicationRun() {
   const tab = await activeTab();
   if (!tab?.id) return;
+  if (state.applicationRun?.phase === "review" && state.applicationRun?.queue?.length) {
+    const [next, ...queue] = state.applicationRun.queue;
+    state.lastRunReport = null;
+    state.applicationRun = { ...state.applicationRun, active: true, phase: "opening", message: `Opening ${next.title}…`, url: next.url, opportunity: next, queue, steps: 0, tabId: tab.id };
+    await persistApplicationRun();
+    await chrome.tabs.update(tab.id, { url: next.url, active: true });
+    return;
+  }
   state.applicationRun = {
     ...(state.applicationRun || {}),
     active: true,
@@ -384,6 +420,8 @@ async function connect() {
 }
 
 $("connectButton").addEventListener("click", connect);
+$("searchRuns").addEventListener("click", () => void searchApplicationRuns());
+$("runQuery").addEventListener("keydown", (event) => { if (event.key === "Enter") void searchApplicationRuns(); });
 $("startRun").addEventListener("click", () => void startApplicationRun());
 $("resumeRun").addEventListener("click", () => void resumeApplicationRun());
 $("stopRun").addEventListener("click", () => void stopApplicationRun());
@@ -462,7 +500,6 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   state.lastRunReport = stored.meritosApplicationRunReport || null;
   $("proactiveMode").checked = state.proactive;
   $("autoContinueRun").checked = state.applicationRun?.autoContinue !== false;
-  if (state.applicationRun?.url) $("runUrl").value = state.applicationRun.url;
   renderApplicationRun();
   if (stored.meritosBaseUrl) $("baseUrl").value = stored.meritosBaseUrl;
   if (!stored.meritosToken) return;

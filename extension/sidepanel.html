@@ -15,8 +15,10 @@
         <div id="opportunityContext" class="opportunity-context" hidden><small>Active MeritOS plan</small><strong id="opportunityTitle"></strong><span id="opportunityOrganization"></span></div>
         <section class="application-run" aria-labelledby="run-title">
           <div class="run-heading"><div><span class="run-kicker">Application Run</span><strong id="run-title">Open, prepare, and return for review</strong></div><span id="runBadge" class="run-badge">Ready</span></div>
-          <p>Paste a specific application URL. MeritOS fills supported fields, moves through safe Next steps, highlights what it still needs, and stops before Submit.</p>
-          <div class="run-input"><input id="runUrl" type="url" inputmode="url" placeholder="https://organization.org/apply"><button id="startRun" class="primary">Prepare</button></div>
+          <p>Describe what you want. MeritOS searches live public listings, ranks them against your verified profile, and prepares the opportunities you select.</p>
+          <div class="run-input"><input id="runQuery" type="text" placeholder="High-school computational biology internships for summer 2027"><button id="searchRuns" class="primary">Find</button></div>
+          <div id="runResults" class="run-results" hidden></div>
+          <button id="startRun" class="primary wide run-prepare" hidden>Prepare selected</button>
           <label class="run-option"><input id="autoContinueRun" type="checkbox" checked><span>Continue through safe Next/Review pages automatically</span></label>
           <div id="runProgress" class="run-progress" hidden><div><span id="runStatus">Opening application…</span><small id="runSummary"></small></div><div class="run-controls"><button id="resumeRun" class="secondary" hidden>Resume</button><button id="stopRun" class="text-button">End</button></div></div>
           <div id="runReport" class="run-report" hidden><strong>Needs your attention</strong><ul id="runMissing"></ul><button id="copyRunReport" class="text-button">Copy checklist</button></div>
