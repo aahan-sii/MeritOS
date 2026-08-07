@@ -1,4 +1,9 @@
 const MeritForm = globalThis.MeritOSFormCore;
+
+window.addEventListener("message", (event) => {
+  if (event.source !== window || event.origin !== window.location.origin || event.data?.type !== "MERITOS_SET_OPPORTUNITY_ALERT") return;
+  chrome.runtime.sendMessage({ type: "MERITOS_SET_OPPORTUNITY_ALERT", enabled: event.data.enabled === true, query: String(event.data.query || "").slice(0, 400) });
+});
 const baseSelector = [
   "input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=file])",
   "textarea",

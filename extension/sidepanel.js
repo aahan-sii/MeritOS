@@ -138,7 +138,7 @@ function renderRunResults(message = "") {
     row.querySelector(".run-fit").textContent = `${item.fitScore}% fit`;
     const input = row.querySelector("input");
     input.checked = state.selectedRuns.has(index);
-    input.addEventListener("change", () => { input.checked ? state.selectedRuns.add(index) : state.selectedRuns.delete(index); $("startRun").hidden = state.selectedRuns.size === 0; $("startRun").textContent = `Prepare ${state.selectedRuns.size} selected`; });
+    input.addEventListener("change", () => { if (input.checked) state.selectedRuns.add(index); else state.selectedRuns.delete(index); $("startRun").hidden = state.selectedRuns.size === 0; $("startRun").textContent = `Prepare ${state.selectedRuns.size} selected`; });
     root.append(row);
   });
   $("startRun").hidden = state.selectedRuns.size === 0;

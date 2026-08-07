@@ -22,6 +22,34 @@ async function scanSource(source: (typeof sources)[number], query: string) {
   return parseOpportunityRows(markdown, query, source);
 }
 
+type ExternalJob = { company: string; title: string; location: string; url: string; source: string; repository: string; matchCount: number };
+
+function queryTerms(query: string) {
+  const ignored = new Set(["intern", "internship", "internships", "job", "jobs", "role", "roles", "summer", "program", "programs", "remote"]);
+  return query.toLowerCase().split(/[^a-z0-9+#.]+/).filter((term) => term.length > 2 && !ignored.has(term)).slice(0, 15);
+}
+
+function externalMatch(item: Omit<ExternalJob, "matchCount">, query: string): ExternalJob | null {
+  const terms = queryTerms(query);
+  const text = `${item.company} ${item.title} ${item.location}`.toLowerCase();
+  const matchCount = terms.filter((term) => text.includes(term)).length;
+  return terms.length && !matchCount ? null : { ...item, matchCount };
+}
+
+async function scanJsonBoards(query: string) {
+  const requests = await Promise.allSettled([
+    fetch("https://remotive.com/api/remote-jobs?limit=100", { headers: { "User-Agent": "MeritOS-Opportunity-Watch/1.0" }, next: { revalidate: 900 } }).then((response) => response.json()),
+    fetch("https://www.arbeitnow.com/api/job-board-api", { headers: { "User-Agent": "MeritOS-Opportunity-Watch/1.0" }, next: { revalidate: 900 } }).then((response) => response.json()),
+    fetch("https://remoteok.com/api", { headers: { "User-Agent": "MeritOS-Opportunity-Watch/1.0" }, next: { revalidate: 900 } }).then((response) => response.json()),
+  ]);
+  const [remotive, arbeitnow, remoteok] = requests.map((result) => result.status === "fulfilled" ? result.value : null);
+  return [
+    ...((remotive?.jobs || []).map((job: Record<string, unknown>) => externalMatch({ company: String(job.company_name || "Employer"), title: String(job.title || "Open role"), location: String(job.candidate_required_location || "Remote"), url: String(job.url || ""), source: "Remotive", repository: "https://remotive.com/remote-jobs" }, query))),
+    ...((arbeitnow?.data || []).map((job: Record<string, unknown>) => externalMatch({ company: String(job.company_name || "Employer"), title: String(job.title || "Open role"), location: String(job.location || (job.remote ? "Remote" : "Check listing")), url: String(job.url || ""), source: "Arbeitnow", repository: "https://www.arbeitnow.com/" }, query))),
+    ...((Array.isArray(remoteok) ? remoteok.slice(1) : []).map((job: Record<string, unknown>) => externalMatch({ company: String(job.company || "Employer"), title: String(job.position || "Open role"), location: String(job.location || "Remote"), url: String(job.url || job.apply_url || ""), source: "Remote OK", repository: "https://remoteok.com/" }, query))),
+  ].filter((item): item is ExternalJob => Boolean(item?.url));
+}
+
 export async function POST(request: NextRequest) {
   try {
     const user = await requireApiUser();
@@ -33,7 +61,7 @@ export async function POST(request: NextRequest) {
       .where(and(eq(claims.userEmail, user.email), eq(claims.status, "verified")));
     const ignored = new Set(["with", "from", "that", "this", "have", "experience", "project", "skills", "education"]);
     const profileTerms = [...new Set(verified.flatMap((claim) => `${claim.category} ${claim.statement}`.toLowerCase().split(/[^a-z0-9+#.]+/)).filter((term) => term.length > 3 && !ignored.has(term)))].slice(0, 100);
-    const results = await Promise.allSettled(sources.map((source) => scanSource(source, query)));
+    const results = await Promise.allSettled([...sources.map((source) => scanSource(source, query)), scanJsonBoards(query)]);
     const items = results
       .flatMap((result) => result.status === "fulfilled" ? result.value : [])
       .filter((item, index, list) => list.findIndex((candidate) => candidate.url === item.url) === index)
@@ -46,7 +74,7 @@ export async function POST(request: NextRequest) {
       .slice(0, 30);
     return NextResponse.json({
       items,
-      sources: sources.map((source) => ({ name: source.name, repository: `https://github.com/${source.repo}` })),
+      sources: [...sources.map((source) => ({ name: source.name, repository: `https://github.com/${source.repo}` })), { name: "Remotive", repository: "https://remotive.com/remote-jobs" }, { name: "Arbeitnow", repository: "https://www.arbeitnow.com/" }, { name: "Remote OK", repository: "https://remoteok.com/" }],
       checkedAt: new Date().toISOString(),
       note: "Public board scan only. Confirm eligibility, freshness, and deadlines on the employer or program website.",
     });

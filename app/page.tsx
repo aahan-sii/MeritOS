@@ -4,7 +4,7 @@
 import { DragEvent, useEffect, useMemo, useState } from "react";
 import { SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
 
-type View = "overview" | "profile" | "review" | "fit" | "stories" | "interview" | "extension";
+type View = "overview" | "profile" | "review" | "autopilot" | "fit" | "stories" | "interview" | "extension";
 type ClaimStatus = "verified" | "draft" | "inference" | "restricted" | "missing";
 type ImportStage = "idle" | "selected" | "uploading" | "done" | "error";
 
@@ -181,10 +181,11 @@ const navigation: Array<{ id: View; label: string; index: string }> = [
   { id: "overview", label: "Home", index: "00" },
   { id: "profile", label: "Build profile", index: "01" },
   { id: "review", label: "Review profile", index: "02" },
-  { id: "fit", label: "Find & prepare", index: "03" },
-  { id: "stories", label: "Story bank", index: "04" },
-  { id: "interview", label: "Interview practice", index: "05" },
-  { id: "extension", label: "Chrome extension", index: "06" },
+  { id: "autopilot", label: "Autopilot", index: "03" },
+  { id: "fit", label: "Target analysis", index: "04" },
+  { id: "stories", label: "Story bank", index: "05" },
+  { id: "interview", label: "Interview practice", index: "06" },
+  { id: "extension", label: "Chrome extension", index: "07" },
 ];
 
 function Logo({ compact = false }: { compact?: boolean }) {
@@ -275,12 +276,11 @@ export default function Home() {
   const [opportunityQuery, setOpportunityQuery] = useState("");
   const [opportunityResults, setOpportunityResults] = useState<OpportunityResult[]>([]);
   const [opportunityUrl, setOpportunityUrl] = useState("");
-  const [opportunityText, setOpportunityText] = useState("");
-  const [showOpportunityText, setShowOpportunityText] = useState(false);
   const [preflight, setPreflight] = useState<OpportunityPreflight | null>(null);
   const [currentOpportunityId, setCurrentOpportunityId] = useState("");
   const [applicationPacket, setApplicationPacket] = useState<ApplicationPacket | null>(null);
   const [applicationQueue, setApplicationQueue] = useState<ApplicationQueueItem[]>([]);
+  const [opportunityAlerts, setOpportunityAlerts] = useState(false);
 
   const verifiedClaims = useMemo(
     () => claims.filter((claim) => claim.status === "verified"),
@@ -351,6 +351,11 @@ export default function Home() {
       .finally(() => !cancelled && setAccountLoading(false));
     return () => { cancelled = true; };
   }, [isSignedIn, user?.fullName]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setOpportunityAlerts(window.localStorage.getItem("meritosOpportunityAlerts") === "true"), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -652,25 +657,33 @@ export default function Home() {
     }
   }
 
-  async function scanOpportunityBoards(prepareBest = false) {
+  async function scanOpportunityBoards(prepareBest = false, background = false) {
     const query = opportunityQuery.trim() || fit?.target || target;
     if (!query) return;
-    setBusy("opportunity-watch");
-    setError("");
+    if (!background) { setBusy("opportunity-watch"); setError(""); }
     try {
-      const data = await readJson(await fetch("/api/opportunity-watch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
-      }));
-      setOpportunityResults(data.items || []);
-      announce(`Checked public internship boards and found ${data.items?.length || 0} possible matches.`);
-      if (prepareBest && data.items?.[0]?.url) await analyzeOpportunityPage(data.items[0].url);
+      const data = await readJson(await fetch("/api/opportunity-watch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query }) }));
+      const items: OpportunityResult[] = data.items || [];
+      setOpportunityResults(items);
+      const known = new Set<string>(JSON.parse(window.localStorage.getItem("meritosKnownOpportunities") || "[]"));
+      const newItems = items.filter((item) => !known.has(item.url));
+      window.localStorage.setItem("meritosKnownOpportunities", JSON.stringify(items.map((item) => item.url).slice(0, 100)));
+      if (background && newItems.length && Notification.permission === "granted") new Notification("MeritOS found new matches", { body: `${newItems.length} new opportunity${newItems.length === 1 ? "" : "ies"} match your Autopilot alert.` });
+      if (!background) announce(`Searched ${data.sources?.length || 0} live sources and found ${items.length} possible matches.`);
+      if (prepareBest && items[0]?.url) await analyzeOpportunityPage(items[0].url);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Opportunity boards could not be scanned.");
-    } finally {
-      setBusy("");
-    }
+      if (!background) setError(requestError instanceof Error ? requestError.message : "Opportunity sources could not be searched.");
+    } finally { if (!background) setBusy(""); }
+  }
+
+  async function toggleOpportunityAlerts() {
+    const next = !opportunityAlerts;
+    if (next && "Notification" in window && Notification.permission === "default") await Notification.requestPermission();
+    setOpportunityAlerts(next);
+    window.localStorage.setItem("meritosOpportunityAlerts", String(next));
+    window.postMessage({ type: "MERITOS_SET_OPPORTUNITY_ALERT", enabled: next, query: opportunityQuery.trim() || fit?.target || target }, window.location.origin);
+    announce(next ? "Autopilot alert enabled. The Chrome extension will keep watching in the background." : "Autopilot alert paused.");
+    if (next) void scanOpportunityBoards(false, true);
   }
 
   async function analyzeOpportunityPage(selectedUrl = opportunityUrl) {
@@ -682,7 +695,7 @@ export default function Home() {
       const data = await readJson(await fetch("/api/opportunity-preflight", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: selectedUrl, pastedText: opportunityText }),
+        body: JSON.stringify({ url: selectedUrl, pastedText: "" }),
       }));
       setPreflight(data.preflight);
       setCurrentOpportunityId(data.opportunityId);
@@ -1030,7 +1043,7 @@ export default function Home() {
                 <h2>{fit ? `Find and prepare applications for ${fit.target}.` : "Build your profile once. Let Autopilot find the applications."}</h2>
                 <p>{fit?.summary || "Upload your evidence and connect public profile context. MeritOS automatically creates reusable stories, searches live openings, and prepares grounded application packets."}</p>
                 <div className="mos-action-row">
-                  <button className="mos-button pale" onClick={() => goTo("fit")}>Open Autopilot</button>
+                  <button className="mos-button pale" onClick={() => goTo("autopilot")}>Open Autopilot</button>
                   <button className="mos-button text-inverse" onClick={() => goTo("profile")}>Improve my profile →</button>
                 </div>
               </div>
@@ -1143,6 +1156,35 @@ export default function Home() {
                 })}
               </div>
             </section>
+          </div>
+        )}
+
+        {view === "autopilot" && (
+          <div className="mos-page">
+            <section className="mos-target-hero mos-autopilot-hero" data-reveal>
+              <div><span className="mos-kicker">Autonomous application workspace</span><h2>Tell MeritOS what you want once.</h2><p>Autopilot searches GitHub opportunity repositories plus live Remotive, Arbeitnow, and Remote OK feeds, ranks matches against your verified profile, and prepares the strongest application before asking for final confirmation.</p></div>
+              <div className="mos-target-form">
+                <textarea value={opportunityQuery} onChange={(event) => setOpportunityQuery(event.target.value)} placeholder="Example: high-school computational biology internships for summer 2027, remote or near Phoenix" />
+                <button className="mos-button dark large" disabled={!(opportunityQuery.trim() || fit?.target || target) || Boolean(busy)} onClick={() => void scanOpportunityBoards(true)}>{busy ? "Searching and preparing…" : "Find & prepare applications"}</button>
+                <button className={opportunityAlerts ? "mos-button light active" : "mos-button light"} disabled={!opportunityQuery.trim()} onClick={() => void toggleOpportunityAlerts()}>{opportunityAlerts ? "Alerts on ✓" : "Alert me to new matches"}</button>
+              </div>
+            </section>
+
+            <section className="mos-metric-strip" data-reveal>
+              <article><small>Search coverage</small><strong>6</strong><span>live boards and repositories</span></article>
+              <article><small>Matches found</small><strong>{opportunityResults.length}</strong><span>ranked against your profile</span></article>
+              <article><small>Prepared queue</small><strong>{applicationQueue.filter((item) => !["submitted", "withdrawn"].includes(item.application.status)).length}</strong><span>waiting for confirmation</span></article>
+              <article><small>Final submission</small><strong>1 click</strong><span>always confirmed by you</span></article>
+            </section>
+
+            <section className="mos-command-center" data-reveal>
+              <div className="mos-command-intro"><span className="mos-kicker">How autonomous mode behaves</span><h2>It fills first and asks only when the risk is real.</h2><p>Verified facts are used directly. Low-risk wording and fit inferences are drafted with visible confidence. MeritOS pauses only for missing credentials, legal or work-authorization answers, sensitive disclosures, consent, CAPTCHAs, account verification, or the final submission.</p><div className="mos-command-guardrail"><strong>No repetitive intake.</strong><span>If your résumé, website, LinkedIn export, or prior verified answer contains it, MeritOS reuses it instead of asking again.</span></div></div>
+              {applicationPacket ? <div className="mos-command-input"><span className="mos-pill success">Ready for confirmation</span><h3>{applicationPacket.title}</h3><p>{applicationPacket.organization} · {applicationPacket.answers.filter((answer) => answer.status === "draft").length} answers prepared</p><a className="mos-button dark large full" href={applicationPacket.sourceUrl} target="_blank" rel="noreferrer">Open prepared form for final review ↗</a><small className="mos-fine-print">The Chrome side panel completes supported fields on the external form and stops before Submit.</small></div> : <div className="mos-command-input"><strong>No prepared application yet</strong><p>Enter one search goal above. MeritOS will search, rank, preflight, and build the best packet in one run.</p></div>}
+            </section>
+
+            {opportunityResults.length > 0 && <section className="mos-opportunity-radar" data-reveal><div><span className="mos-kicker">Ranked live matches</span><h3>Autopilot selected the first result. You can prepare another.</h3><p>Results combine structured job APIs and actively maintained public opportunity repositories.</p></div><div className="mos-radar-results">{opportunityResults.map((item, index) => <article key={`${item.source}-${item.url}`}><span><small>#{index + 1} · {item.company} · {item.location}</small><strong>{item.title}</strong><em>{item.fitScore ? `${item.fitScore}% directional fit · ` : ""}{item.source}</em></span><div><button disabled={Boolean(busy)} onClick={() => void analyzeOpportunityPage(item.url)}>Prepare</button><a href={item.url} target="_blank" rel="noreferrer">Source ↗</a></div></article>)}</div></section>}
+
+            {applicationQueue.length > 0 && <section className="mos-application-queue" data-reveal><div><span className="mos-kicker">Confirmation queue</span><h3>Prepared applications</h3></div><div>{applicationQueue.filter((item) => !["submitted", "withdrawn"].includes(item.application.status)).map((item) => <a key={item.application.id} href={item.opportunity.url} target="_blank" rel="noreferrer"><span><strong>{item.opportunity.title}</strong><small>{item.opportunity.organization} · {item.application.status}</small></span><b>Review ↗</b></a>)}</div></section>}
           </div>
         )}
 

@@ -22,6 +22,27 @@ async function scan(source: (typeof sources)[number], query: string) {
   if (!response.ok) return [];
   return parseOpportunityRows((await response.text()).slice(0, 1_250_000), query, source);
 }
+
+async function scanExternalBoards(query: string) {
+  const queryWords = terms(query);
+  const settled = await Promise.allSettled([
+    fetch("https://remotive.com/api/remote-jobs?limit=100", { headers: { "User-Agent": "MeritOS-Opportunity-Discovery/1.0" }, next: { revalidate: 900 } }).then((response) => response.json()),
+    fetch("https://www.arbeitnow.com/api/job-board-api", { headers: { "User-Agent": "MeritOS-Opportunity-Discovery/1.0" }, next: { revalidate: 900 } }).then((response) => response.json()),
+    fetch("https://remoteok.com/api", { headers: { "User-Agent": "MeritOS-Opportunity-Discovery/1.0" }, next: { revalidate: 900 } }).then((response) => response.json()),
+  ]);
+  const [remotive, arbeitnow, remoteok] = settled.map((result) => result.status === "fulfilled" ? result.value : null);
+  const candidates = [
+    ...((remotive?.jobs || []).map((job: Record<string, unknown>) => ({ company: String(job.company_name || "Employer"), title: String(job.title || "Open role"), location: String(job.candidate_required_location || "Remote"), url: String(job.url || ""), source: "Remotive", repository: "https://remotive.com/remote-jobs" }))),
+    ...((arbeitnow?.data || []).map((job: Record<string, unknown>) => ({ company: String(job.company_name || "Employer"), title: String(job.title || "Open role"), location: String(job.location || (job.remote ? "Remote" : "Check listing")), url: String(job.url || ""), source: "Arbeitnow", repository: "https://www.arbeitnow.com/" }))),
+    ...((Array.isArray(remoteok) ? remoteok.slice(1) : []).map((job: Record<string, unknown>) => ({ company: String(job.company || "Employer"), title: String(job.position || "Open role"), location: String(job.location || "Remote"), url: String(job.url || job.apply_url || ""), source: "Remote OK", repository: "https://remoteok.com/" }))),
+  ];
+  return candidates.map((item) => {
+    const text = `${item.company} ${item.title} ${item.location}`.toLowerCase();
+    const matchCount = queryWords.filter((word) => text.includes(word)).length;
+    return { ...item, matchCount };
+  }).filter((item) => item.url && (!queryWords.length || item.matchCount > 0));
+}
+
 export async function POST(request: NextRequest) {
   const connection = await requireExtensionConnection(request);
   if (!connection) return NextResponse.json({ error: "This connection key is invalid or revoked." }, { status: 401, headers: extensionCorsHeaders });
@@ -31,7 +52,7 @@ export async function POST(request: NextRequest) {
     const profile = await connection.db.select({ statement: claims.statement, category: claims.category }).from(claims)
       .where(and(eq(claims.userEmail, connection.connection.userEmail), inArray(claims.status, ["verified", "draft"]))).orderBy(desc(claims.updatedAt)).limit(150);
     const profileTerms = terms(profile.map((item) => `${item.category} ${item.statement}`).join(" ")).slice(0, 80);
-    const settled = await Promise.allSettled(sources.map((source) => scan(source, query)));
+    const settled = await Promise.allSettled([...sources.map((source) => scan(source, query)), scanExternalBoards(query)]);
     const items = settled.flatMap((result) => result.status === "fulfilled" ? result.value : [])
       .filter((item, index, all) => all.findIndex((other) => other.url === item.url) === index)
       .map((item) => { const text = `${item.company} ${item.title} ${item.location}`.toLowerCase(); const matches = profileTerms.filter((term) => text.includes(term)).slice(0, 5); return { ...item, fitScore: Math.min(99, 45 + item.matchCount * 12 + matches.length * 4), matchReasons: matches.length ? matches : ["Matches your search goal"] }; })
