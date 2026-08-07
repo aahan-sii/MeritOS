@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { and, eq } from "drizzle-orm";
+import { getDb } from "@/db";
+import { claims } from "@/db/schema";
 import { parseOpportunityRows } from "@/lib/opportunity-watch-core";
 import { ApiError, asRecord, asString, jsonError, requireApiUser } from "../_lib/request";
 
@@ -21,15 +24,25 @@ async function scanSource(source: (typeof sources)[number], query: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireApiUser();
+    const user = await requireApiUser();
     const body = asRecord(await request.json(), "body");
     const query = asString(body.query, "query", 300);
     if (query.length < 3) throw new ApiError(400, "Add at least one role, field, or skill to scan for.");
+    const db = await getDb();
+    const verified = await db.select({ category: claims.category, statement: claims.statement }).from(claims)
+      .where(and(eq(claims.userEmail, user.email), eq(claims.status, "verified")));
+    const ignored = new Set(["with", "from", "that", "this", "have", "experience", "project", "skills", "education"]);
+    const profileTerms = [...new Set(verified.flatMap((claim) => `${claim.category} ${claim.statement}`.toLowerCase().split(/[^a-z0-9+#.]+/)).filter((term) => term.length > 3 && !ignored.has(term)))].slice(0, 100);
     const results = await Promise.allSettled(sources.map((source) => scanSource(source, query)));
     const items = results
       .flatMap((result) => result.status === "fulfilled" ? result.value : [])
-      .sort((left, right) => right.matchCount - left.matchCount)
       .filter((item, index, list) => list.findIndex((candidate) => candidate.url === item.url) === index)
+      .map((item) => {
+        const searchable = `${item.company} ${item.title} ${item.location}`.toLowerCase();
+        const matchedProfileTerms = profileTerms.filter((term) => searchable.includes(term)).slice(0, 6);
+        return { ...item, fitScore: Math.min(99, 42 + item.matchCount * 11 + matchedProfileTerms.length * 5), matchReasons: matchedProfileTerms.length ? matchedProfileTerms : ["Matches your stated target"] };
+      })
+      .sort((left, right) => right.fitScore - left.fitScore || right.matchCount - left.matchCount)
       .slice(0, 30);
     return NextResponse.json({
       items,

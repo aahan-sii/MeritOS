@@ -62,6 +62,8 @@ type OpportunityResult = {
   url: string;
   source: string;
   repository: string;
+  fitScore?: number;
+  matchReasons?: string[];
 };
 
 type OpportunityPreflight = {
@@ -179,7 +181,7 @@ const navigation: Array<{ id: View; label: string; index: string }> = [
   { id: "overview", label: "Home", index: "00" },
   { id: "profile", label: "Build profile", index: "01" },
   { id: "review", label: "Review profile", index: "02" },
-  { id: "fit", label: "Target & opportunities", index: "03" },
+  { id: "fit", label: "Find & prepare", index: "03" },
   { id: "stories", label: "Story bank", index: "04" },
   { id: "interview", label: "Interview practice", index: "05" },
   { id: "extension", label: "Chrome extension", index: "06" },
@@ -473,11 +475,28 @@ export default function Home() {
         body: JSON.stringify({ status }),
       }));
       setClaims((current) => current.map((item) => item.id === claim.id ? data.claim : item));
+      if (status === "verified" && /experience|project|leadership|community|research|employment|entrepreneur/i.test(claim.category) && !stories.some((story) => story.sourceClaimIds.includes(claim.id))) {
+        void generateAutomaticStory(data.claim);
+      }
       announce(status === "verified" ? "Fact verified and available to MeritOS." : "Fact moved out of automatic use.");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "The fact could not be updated.");
     } finally {
       setBusy("");
+    }
+  }
+
+  async function generateAutomaticStory(claim: Claim) {
+    try {
+      const data = await readJson(await fetch("/api/stories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target: target || fit?.target || "General future applications", lens: "Auto-select from target", focus: claim.category, depth: "Standard" }),
+      }));
+      setStories((current) => current.some((story) => story.id === data.story.id) ? current : [data.story, ...current]);
+      announce("Fact verified. MeritOS also built a reusable story draft from it.");
+    } catch {
+      // Fact verification remains successful if optional background story creation is unavailable.
     }
   }
 
@@ -633,7 +652,7 @@ export default function Home() {
     }
   }
 
-  async function scanOpportunityBoards() {
+  async function scanOpportunityBoards(prepareBest = false) {
     const query = opportunityQuery.trim() || fit?.target || target;
     if (!query) return;
     setBusy("opportunity-watch");
@@ -646,6 +665,7 @@ export default function Home() {
       }));
       setOpportunityResults(data.items || []);
       announce(`Checked public internship boards and found ${data.items?.length || 0} possible matches.`);
+      if (prepareBest && data.items?.[0]?.url) await analyzeOpportunityPage(data.items[0].url);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Opportunity boards could not be scanned.");
     } finally {
@@ -653,8 +673,8 @@ export default function Home() {
     }
   }
 
-  async function analyzeOpportunityPage() {
-    if (!opportunityUrl.trim()) return;
+  async function analyzeOpportunityPage(selectedUrl = opportunityUrl) {
+    if (!selectedUrl.trim()) return;
     setBusy("opportunity-preflight");
     setError("");
     setApplicationPacket(null);
@@ -662,14 +682,15 @@ export default function Home() {
       const data = await readJson(await fetch("/api/opportunity-preflight", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: opportunityUrl, pastedText: opportunityText }),
+        body: JSON.stringify({ url: selectedUrl, pastedText: opportunityText }),
       }));
       setPreflight(data.preflight);
       setCurrentOpportunityId(data.opportunityId);
       setOpportunityUrl(data.sourceUrl);
       const applicationsData = await readJson(await fetch("/api/applications"));
       setApplicationQueue(applicationsData.applications || []);
-      announce("Official requirements analyzed and saved to your application queue.");
+      announce("Best match analyzed. MeritOS is preparing its application packet.");
+      await buildApplicationPacket(data.opportunityId);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "That opportunity could not be analyzed.");
     } finally {
@@ -677,15 +698,15 @@ export default function Home() {
     }
   }
 
-  async function buildApplicationPacket() {
-    if (!currentOpportunityId) return;
+  async function buildApplicationPacket(opportunityId = currentOpportunityId) {
+    if (!opportunityId) return;
     setBusy("application-packet");
     setError("");
     try {
       const data = await readJson(await fetch("/api/application-packet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ opportunityId: currentOpportunityId }),
+        body: JSON.stringify({ opportunityId }),
       }));
       setApplicationPacket(data.packet);
       const applicationsData = await readJson(await fetch("/api/applications"));
@@ -859,15 +880,15 @@ export default function Home() {
             <span className="mos-kicker">One profile. Every application form.</span>
             <h1>Your real experience,<br /><em>ready wherever you apply.</em></h1>
             <p>
-              MeritOS turns your résumé and personal context into verified facts, helps you strengthen
-              your fit, then fills legitimate application forms through a Chrome side panel you control.
+              MeritOS builds a verified profile, searches live opportunity boards, prepares matching
+              applications, and fills legitimate external forms through a Chrome side panel.
             </p>
             <div className="mos-action-row">
               <SignUpButton mode="modal"><button className="mos-button dark large">Build my profile</button></SignUpButton>
               <a className="mos-button light large" href="/install">Get the extension</a>
             </div>
             <div className="mos-trust-row">
-              <span>Evidence linked</span><span>User approved</span><span>Never auto-submitted</span>
+              <span>Searches live openings</span><span>Evidence linked</span><span>Stops before final submit</span>
             </div>
           </div>
           <div className="mos-landing-visual" data-reveal>
@@ -882,8 +903,8 @@ export default function Home() {
         <section className="mos-flow" id="how-it-works" aria-label="How MeritOS works">
           <article><b>01</b><strong>Build your profile</strong><p>Upload documents and add context a résumé cannot capture.</p></article>
           <article><b>02</b><strong>Verify every fact</strong><p>Control what is true, sensitive, or safe to reuse.</p></article>
-          <article><b>03</b><strong>Strengthen your fit</strong><p>Choose a target and get specific evidence gaps and next actions.</p></article>
-          <article><b>04</b><strong>Use it on real forms</strong><p>Approve answers in Chrome. MeritOS never presses submit.</p></article>
+          <article><b>03</b><strong>Tell Autopilot what to find</strong><p>MeritOS searches current boards and prepares the strongest matches.</p></article>
+          <article><b>04</b><strong>Review before submission</strong><p>The extension fills external forms and stops at the irreversible final action.</p></article>
         </section>
         <section className="mos-landing-intelligence" id="profile-intelligence">
           <div className="mos-landing-section-copy" data-reveal>
@@ -1006,11 +1027,11 @@ export default function Home() {
             <section className="mos-hero" data-reveal>
               <div>
                 <span className="mos-pill inverse">{fit ? "Target-aware workspace" : "Verified profile workspace"}</span>
-                <h2>{fit ? `Build a stronger case for ${fit.target}.` : "Build the context MeritOS needs to answer well."}</h2>
-                <p>{fit?.summary || "Add your evidence, motivations, goals, and real outcomes once. MeritOS will use only approved facts when it helps on external forms."}</p>
+                <h2>{fit ? `Find and prepare applications for ${fit.target}.` : "Build your profile once. Let Autopilot find the applications."}</h2>
+                <p>{fit?.summary || "Upload your evidence and connect public profile context. MeritOS automatically creates reusable stories, searches live openings, and prepares grounded application packets."}</p>
                 <div className="mos-action-row">
-                  <button className="mos-button pale" onClick={() => goTo(fit ? "fit" : "profile")}>{fit ? "Open target analysis" : "Continue my profile"}</button>
-                  <button className="mos-button text-inverse" onClick={() => goTo("extension")}>Use on a real form →</button>
+                  <button className="mos-button pale" onClick={() => goTo("fit")}>Open Autopilot</button>
+                  <button className="mos-button text-inverse" onClick={() => goTo("profile")}>Improve my profile →</button>
                 </div>
               </div>
               <ReadinessVisual value={readinessValue} label={fit ? formatBand(fit.readinessBand) : "profile coverage"} />
@@ -1044,6 +1065,12 @@ export default function Home() {
                   })}
                 </div>
               </article>
+            </section>
+
+            <section className="mos-extension-callout mos-autopilot-callout" data-reveal>
+              <img src="/meritos-mark-v2.png" alt="" />
+              <div><span className="mos-kicker">Find → rank → prepare</span><h3>The GitHub opportunity finder is on the website.</h3><p>Describe the role or program once. MeritOS scans live feeds, prepares the strongest match, and adds it to your queue without asking for a URL.</p></div>
+              <button className="mos-button dark" onClick={() => goTo("fit")}>Find applications</button>
             </section>
 
             <section className="mos-extension-callout" data-reveal>
@@ -1130,22 +1157,21 @@ export default function Home() {
             </section>
             <section className="mos-command-center" data-reveal>
               <div className="mos-command-intro">
-                <span className="mos-kicker">Application command center</span>
-                <h2>Turn an official opportunity page into an action plan.</h2>
-                <p>Paste the official program, grant, scholarship, internship, or job page. MeritOS reads the requirements, compares them with your verified profile, saves the deadline, and prepares a reviewable packet for the extension.</p>
-                <div className="mos-command-guardrail"><strong>You stay in control.</strong><span>MeritOS can research, prepare, and fill approved answers. It never silently presses Submit.</span></div>
+                <span className="mos-kicker">MeritOS Autopilot</span>
+                <h2>Describe what you want. MeritOS finds and prepares it.</h2>
+                <p>No links to paste. MeritOS scans current public opportunity feeds, selects the strongest profile match, reads its official requirements, and builds the first application packet automatically.</p>
+                <div className="mos-command-guardrail"><strong>Bold, but reversible.</strong><span>Low-risk assumptions are drafted and labeled. Credentials, legal answers, and consent are never guessed. It never silently presses Submit.</span></div>
               </div>
               <div className="mos-command-input">
-                <label><span>Official opportunity URL</span><input value={opportunityUrl} onChange={(event) => setOpportunityUrl(event.target.value)} placeholder="https://organization.org/program/apply" /></label>
-                <button className="mos-text-toggle" onClick={() => setShowOpportunityText((value) => !value)}>{showOpportunityText ? "Hide pasted instructions" : "Page blocked? Paste instructions instead +"}</button>
-                {showOpportunityText && <label><span>Official instructions</span><textarea value={opportunityText} onChange={(event) => setOpportunityText(event.target.value)} placeholder="Paste eligibility, deadlines, required documents, and application questions from the official page." /></label>}
-                <button className="mos-button dark large full" disabled={!opportunityUrl.trim() || busy === "opportunity-preflight"} onClick={analyzeOpportunityPage}>{busy === "opportunity-preflight" ? "Reading the official page…" : "Run opportunity preflight"}</button>
+                <label><span>What should Autopilot find?</span><textarea value={opportunityQuery} onChange={(event) => setOpportunityQuery(event.target.value)} placeholder="High-school computational biology internships for summer 2027, preferably remote or in Arizona" /></label>
+                <button className="mos-button dark large full" disabled={!(opportunityQuery.trim() || fit?.target || target) || busy === "opportunity-watch" || busy === "opportunity-preflight" || busy === "application-packet"} onClick={() => void scanOpportunityBoards(true)}>{busy ? "Autopilot is working…" : "Find & prepare best match"}</button>
+                <small className="mos-fine-print">Search → rank → requirements scan → evidence-backed packet → external form handoff.</small>
               </div>
               {preflight && (
                 <div className="mos-preflight">
                   <header>
                     <div><span className="mos-pill success">Saved to application queue</span><h3>{preflight.title}</h3><p>{preflight.organization}{preflight.location ? ` · ${preflight.location}` : ""}</p></div>
-                    <div className="mos-preflight-actions"><a className="mos-button light" href={opportunityUrl} target="_blank" rel="noreferrer">Open official page ↗</a><button className="mos-button dark" disabled={busy === "application-packet"} onClick={buildApplicationPacket}>{busy === "application-packet" ? "Building packet…" : "Build application packet"}</button></div>
+                    <div className="mos-preflight-actions"><a className="mos-button light" href={opportunityUrl} target="_blank" rel="noreferrer">Open official form ↗</a><button className="mos-button dark" disabled={busy === "application-packet"} onClick={() => void buildApplicationPacket()}>{busy === "application-packet" ? "Building packet…" : "Rebuild packet"}</button></div>
                   </header>
                   <div className="mos-preflight-metrics">
                     <article><small>Deadline</small><strong>{preflight.deadlineText || "Not confirmed"}</strong></article>
@@ -1188,9 +1214,9 @@ export default function Home() {
                   <article className="mos-card" data-reveal><span className="mos-kicker">Where to look</span><h3>Targeted opportunity searches</h3><div className="mos-search-leads">{fit.opportunitySearches.map((search) => <a key={search.query} href={`https://www.google.com/search?q=${encodeURIComponent(search.query)}`} target="_blank" rel="noreferrer"><span><strong>{search.label}</strong><small>{search.why}</small></span><b>Search ↗</b></a>)}</div><p className="mos-fine-print">Search leads are not availability claims. Confirm eligibility and deadlines on official program pages.</p></article>
                 </section>
                 <section className="mos-opportunity-radar" data-reveal>
-                  <div><span className="mos-kicker">Public-board opportunity radar</span><h3>Scan active GitHub internship lists</h3><p>MeritOS checks public internship repositories for matching rows. This is a live lead scan—not an automatic application or an eligibility claim.</p></div>
-                  <div className="mos-radar-controls"><input value={opportunityQuery} onChange={(event) => setOpportunityQuery(event.target.value)} placeholder={fit.target} /><button className="mos-button dark" disabled={busy === "opportunity-watch"} onClick={scanOpportunityBoards}>{busy === "opportunity-watch" ? "Checking boards…" : "Scan public boards"}</button></div>
-                  {opportunityResults.length > 0 && <div className="mos-radar-results">{opportunityResults.map((item) => <article key={`${item.source}-${item.url}`}><span><small>{item.company} · {item.location}</small><strong>{item.title}</strong><em>{item.source}</em></span><div><button onClick={() => { setOpportunityUrl(item.url); setPreflight(null); window.scrollTo({ top: 250, behavior: "smooth" }); }}>Preflight this lead</button><a href={item.url} target="_blank" rel="noreferrer">Open ↗</a></div></article>)}</div>}
+                  <div><span className="mos-kicker">Live opportunity feed</span><h3>The GitHub-powered finder is built in.</h3><p>MeritOS watches actively maintained public internship repositories, deduplicates official application links, and lets you prepare any alternate match without copying a URL.</p></div>
+                  <div className="mos-radar-controls"><input value={opportunityQuery} onChange={(event) => setOpportunityQuery(event.target.value)} placeholder={fit.target} /><button className="mos-button dark" disabled={busy === "opportunity-watch"} onClick={() => void scanOpportunityBoards(false)}>{busy === "opportunity-watch" ? "Checking live feeds…" : "Refresh matches"}</button></div>
+                  {opportunityResults.length > 0 && <div className="mos-radar-results">{opportunityResults.map((item, index) => <article key={`${item.source}-${item.url}`}><span><small>#{index + 1} · {item.company} · {item.location}</small><strong>{item.title}</strong><em>{item.fitScore ? `${item.fitScore}% directional fit · ` : ""}{item.matchReasons?.slice(0, 3).join(", ")} · {item.source}</em></span><div><button disabled={busy === "opportunity-preflight" || busy === "application-packet"} onClick={() => void analyzeOpportunityPage(item.url)}>Prepare this application</button><a href={item.url} target="_blank" rel="noreferrer">Official page ↗</a></div></article>)}</div>}
                 </section>
               </>
             ) : (
@@ -1202,7 +1228,7 @@ export default function Home() {
         {view === "stories" && (
           <div className="mos-page">
             <section className="mos-page-intro mos-story-intro" data-reveal>
-              <div><span className="mos-kicker">Reusable truth, not canned essays</span><h2>Choose the strongest story for the application—not the loudest title.</h2><p>Story Studio compares your target, selected experience, and verified evidence before creating an editable Situation–Action–Result–Reflection scaffold.</p></div>
+              <div><span className="mos-kicker">Built automatically from verified evidence</span><h2>Your story bank grows while you build your profile.</h2><p>When you verify experience, project, leadership, research, or community evidence, MeritOS automatically creates an editable Situation–Action–Result–Reflection draft. Use the controls only when you want another angle.</p></div>
               <div className="mos-story-generator">
                 <div className="mos-story-control-grid">
                   <label><span>Story angle</span><select value={storyLens} onChange={(event) => setStoryLens(event.target.value)}>{lenses.map((lens) => <option key={lens}>{lens}</option>)}</select><small>Auto-select will not default to leadership.</small></label>
@@ -1228,7 +1254,7 @@ export default function Home() {
                   <div className="mos-story-actions"><button className="mos-button light" disabled={busy === `story-${story.id}`} onClick={() => saveStory(story, "draft")}>Save changes</button><button className="mos-button dark" onClick={() => saveStory(story, "approved")}>Approve for reuse</button></div>
                 </article>
               ))}
-              {!stories.length && <div className="mos-empty-state"><h3>Your story bank is empty.</h3><p>Choose a lens and generate a scaffold. MeritOS will never fill missing outcomes with guesses.</p></div>}
+              {!stories.length && <div className="mos-empty-state"><h3>No story-ready evidence yet.</h3><p>Verify an experience, project, leadership, research, or community fact and MeritOS will build the first grounded story automatically.</p></div>}
             </section>
           </div>
         )}
