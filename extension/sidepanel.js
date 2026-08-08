@@ -4,6 +4,7 @@ const state = {
   identity: { displayName: "", email: "", headline: "" },
   activeOpportunity: null,
   proactive: true,
+  initiativeMode: "proactive",
   autoAnalysisKey: "",
   fields: [],
   suggestions: new Map(),
@@ -358,7 +359,7 @@ async function generateDrafts(fields, button, { automatic = false } = {}) {
     const response = await fetch(`${state.baseUrl}/api/extension/draft`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${state.token}` },
-      body: JSON.stringify({ fields, mode: state.proactive ? "proactive" : "standard", page: { title: tab?.title || "", url: tab?.url || "" } }),
+      body: JSON.stringify({ fields, mode: state.proactive ? state.initiativeMode : "standard", page: { title: tab?.title || "", url: tab?.url || "" } }),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Could not analyze this form.");
@@ -451,9 +452,10 @@ $("settingsButton").addEventListener("click", () => {
 $("analyzeMissing").addEventListener("click", () => generateDrafts(state.fields.filter(needsAiCompletion).slice(0, 20), $("analyzeMissing")));
 $("proactiveMode").addEventListener("change", async (event) => {
   state.proactive = event.target.checked;
+  state.initiativeMode = state.proactive ? "proactive" : "careful";
   state.autoAnalysisKey = "";
   state.aiSuggestions.clear();
-  await chrome.storage.local.set({ meritosProactive: state.proactive });
+  await chrome.storage.local.set({ meritosProactive: state.proactive, meritosInitiativeMode: state.initiativeMode });
   await scan();
 });
 $("selectAll").addEventListener("click", () => {
@@ -494,8 +496,9 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
 });
 
 (async () => {
-  const stored = await chrome.storage.local.get(["meritosBaseUrl", "meritosToken", "meritosProfile", "meritosProactive", "meritosApplicationRun", "meritosApplicationRunReport"]);
+  const stored = await chrome.storage.local.get(["meritosBaseUrl", "meritosToken", "meritosProfile", "meritosProactive", "meritosInitiativeMode", "meritosApplicationRun", "meritosApplicationRunReport"]);
   state.proactive = stored.meritosProactive !== false;
+  state.initiativeMode = ["careful", "proactive", "high_initiative"].includes(stored.meritosInitiativeMode) ? stored.meritosInitiativeMode : (state.proactive ? "proactive" : "careful");
   state.applicationRun = stored.meritosApplicationRun || null;
   state.lastRunReport = stored.meritosApplicationRunReport || null;
   $("proactiveMode").checked = state.proactive;

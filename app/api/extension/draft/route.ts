@@ -42,7 +42,8 @@ export async function POST(request: NextRequest) {
     const fields = rawFields.map(fieldFrom).filter((field): field is DraftField => Boolean(field)).slice(0, 20);
     if (!fields.length) return NextResponse.json({ error: "At least one valid application field is required." }, { status: 400, headers: extensionCorsHeaders });
     const page = body?.page && typeof body.page === "object" ? body.page as Record<string, unknown> : {};
-    const proactive = body?.mode === "proactive";
+    const highInitiative = body?.mode === "high_initiative";
+    const proactive = body?.mode === "proactive" || highInitiative;
     const [claimRows, opportunityRows, [accountProfile]] = await Promise.all([connection.db
       .select({ id: claims.id, category: claims.category, statement: claims.statement })
       .from(claims)
@@ -81,6 +82,7 @@ export async function POST(request: NextRequest) {
       },
       evidence: rows,
       proactive,
+      highInitiative,
     });
     return NextResponse.json(Array.isArray(body?.fields) ? { results } : results[0], { headers: extensionCorsHeaders });
   } catch (error) {

@@ -1,8 +1,19 @@
 const MeritForm = globalThis.MeritOSFormCore;
 
 window.addEventListener("message", (event) => {
-  if (event.source !== window || event.origin !== window.location.origin || event.data?.type !== "MERITOS_SET_OPPORTUNITY_ALERT") return;
-  chrome.runtime.sendMessage({ type: "MERITOS_SET_OPPORTUNITY_ALERT", enabled: event.data.enabled === true, query: String(event.data.query || "").slice(0, 400) });
+  if (event.source !== window || event.origin !== window.location.origin) return;
+  const trustedMeritOSOrigin = event.origin === "https://merit-os-jflo.vercel.app" || /^http:\/\/localhost(?::\d+)?$/.test(event.origin);
+  if (!trustedMeritOSOrigin) return;
+  if (event.data?.type === "MERITOS_SET_OPPORTUNITY_ALERT") {
+    chrome.runtime.sendMessage({ type: "MERITOS_SET_OPPORTUNITY_ALERT", enabled: event.data.enabled === true, query: String(event.data.query || "").slice(0, 400) });
+  }
+  if (event.data?.type === "MERITOS_SET_INITIATIVE_MODE") {
+    chrome.runtime.sendMessage({ type: "MERITOS_SET_INITIATIVE_MODE", mode: String(event.data.mode || "proactive") });
+  }
+  if (event.data?.type === "MERITOS_QUEUE_APPLICATIONS") {
+    const applications = Array.isArray(event.data.applications) ? event.data.applications.slice(0, 20).map((item) => ({ id: String(item.id || ""), title: String(item.title || "Application").slice(0, 200), organization: String(item.organization || "").slice(0, 200), url: String(item.url || "") })) : [];
+    chrome.runtime.sendMessage({ type: "MERITOS_QUEUE_APPLICATIONS", applications, mode: String(event.data.mode || "proactive") });
+  }
 });
 const baseSelector = [
   "input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=file])",
@@ -250,6 +261,13 @@ function clickSafeNext() {
   window.setTimeout(() => target.click(), 60);
   return true;
 }
+
+document.addEventListener("submit", (event) => {
+  const target = event.submitter instanceof Element ? event.submitter : null;
+  const label = target ? cleanLabel(target.innerText || target.value || target.getAttribute("aria-label")) : "submit";
+  if (MeritForm.progressActionKind(label) !== "final") return;
+  chrome.runtime.sendMessage({ type: "MERITOS_FINAL_SUBMISSION_CONFIRMED", url: location.href });
+}, true);
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "MERITOS_SCAN") {

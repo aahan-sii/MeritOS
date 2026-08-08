@@ -41,12 +41,26 @@ async function scanJsonBoards(query: string) {
     fetch("https://remotive.com/api/remote-jobs?limit=100", { headers: { "User-Agent": "MeritOS-Opportunity-Watch/1.0" }, next: { revalidate: 900 } }).then((response) => response.json()),
     fetch("https://www.arbeitnow.com/api/job-board-api", { headers: { "User-Agent": "MeritOS-Opportunity-Watch/1.0" }, next: { revalidate: 900 } }).then((response) => response.json()),
     fetch("https://remoteok.com/api", { headers: { "User-Agent": "MeritOS-Opportunity-Watch/1.0" }, next: { revalidate: 900 } }).then((response) => response.json()),
+    fetch("https://jobicy.com/api/v2/remote-jobs?count=100", { headers: { "User-Agent": "MeritOS-Opportunity-Watch/1.0" }, next: { revalidate: 900 } }).then((response) => response.json()),
+    fetch("https://www.themuse.com/api/public/jobs?page=0&descending=true", { headers: { "User-Agent": "MeritOS-Opportunity-Watch/1.0" }, next: { revalidate: 900 } }).then((response) => response.json()),
+    fetch(`https://hn.algolia.com/api/v1/search_by_date?query=${encodeURIComponent(query)}&tags=comment&hitsPerPage=50`, { headers: { "User-Agent": "MeritOS-Opportunity-Watch/1.0" }, next: { revalidate: 900 } }).then((response) => response.json()),
   ]);
-  const [remotive, arbeitnow, remoteok] = requests.map((result) => result.status === "fulfilled" ? result.value : null);
+  const [remotive, arbeitnow, remoteok, jobicy, muse, hackerNews] = requests.map((result) => result.status === "fulfilled" ? result.value : null);
   return [
     ...((remotive?.jobs || []).map((job: Record<string, unknown>) => externalMatch({ company: String(job.company_name || "Employer"), title: String(job.title || "Open role"), location: String(job.candidate_required_location || "Remote"), url: String(job.url || ""), source: "Remotive", repository: "https://remotive.com/remote-jobs" }, query))),
     ...((arbeitnow?.data || []).map((job: Record<string, unknown>) => externalMatch({ company: String(job.company_name || "Employer"), title: String(job.title || "Open role"), location: String(job.location || (job.remote ? "Remote" : "Check listing")), url: String(job.url || ""), source: "Arbeitnow", repository: "https://www.arbeitnow.com/" }, query))),
     ...((Array.isArray(remoteok) ? remoteok.slice(1) : []).map((job: Record<string, unknown>) => externalMatch({ company: String(job.company || "Employer"), title: String(job.position || "Open role"), location: String(job.location || "Remote"), url: String(job.url || job.apply_url || ""), source: "Remote OK", repository: "https://remoteok.com/" }, query))),
+    ...((jobicy?.jobs || []).map((job: Record<string, unknown>) => externalMatch({ company: String(job.companyName || "Employer"), title: String(job.jobTitle || "Open role"), location: String(job.jobGeo || "Remote"), url: String(job.url || ""), source: "Jobicy", repository: "https://jobicy.com/" }, query))),
+    ...((muse?.results || []).map((job: Record<string, unknown>) => {
+      const company = job.company && typeof job.company === "object" ? String((job.company as Record<string, unknown>).name || "Employer") : "Employer";
+      const locations = Array.isArray(job.locations) ? job.locations.map((item) => typeof item === "object" && item ? String((item as Record<string, unknown>).name || "") : "").filter(Boolean).join(", ") : "Check listing";
+      const refs = job.refs && typeof job.refs === "object" ? job.refs as Record<string, unknown> : {};
+      return externalMatch({ company, title: String(job.name || "Open role"), location: locations, url: String(refs.landing_page || ""), source: "The Muse", repository: "https://www.themuse.com/search/" }, query);
+    })),
+    ...((hackerNews?.hits || []).map((hit: Record<string, unknown>) => {
+      const text = String(hit.comment_text || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      return externalMatch({ company: String(hit.author || "Hacker News"), title: text.slice(0, 120) || String(hit.story_title || "Who is hiring opportunity"), location: /remote/i.test(text) ? "Remote mentioned" : "Check post", url: `https://news.ycombinator.com/item?id=${encodeURIComponent(String(hit.objectID || ""))}`, source: "Hacker News", repository: "https://hn.algolia.com/api" }, query);
+    })),
   ].filter((item): item is ExternalJob => Boolean(item?.url));
 }
 
@@ -74,7 +88,7 @@ export async function POST(request: NextRequest) {
       .slice(0, 30);
     return NextResponse.json({
       items,
-      sources: [...sources.map((source) => ({ name: source.name, repository: `https://github.com/${source.repo}` })), { name: "Remotive", repository: "https://remotive.com/remote-jobs" }, { name: "Arbeitnow", repository: "https://www.arbeitnow.com/" }, { name: "Remote OK", repository: "https://remoteok.com/" }],
+      sources: [...sources.map((source) => ({ name: source.name, repository: `https://github.com/${source.repo}` })), { name: "Remotive", repository: "https://remotive.com/remote-jobs" }, { name: "Arbeitnow", repository: "https://www.arbeitnow.com/" }, { name: "Remote OK", repository: "https://remoteok.com/" }, { name: "Jobicy", repository: "https://jobicy.com/" }, { name: "The Muse", repository: "https://www.themuse.com/search/" }, { name: "Hacker News", repository: "https://hn.algolia.com/api" }],
       checkedAt: new Date().toISOString(),
       note: "Public board scan only. Confirm eligibility, freshness, and deadlines on the employer or program website.",
     });

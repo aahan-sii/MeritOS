@@ -36,6 +36,7 @@ type DraftBatchRequest = {
   page?: { title?: string; url?: string; opportunityContext?: string };
   evidence: DraftEvidence[];
   proactive?: boolean;
+  highInitiative?: boolean;
 };
 
 function needsInput(question: string): DraftResult {
@@ -83,7 +84,9 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
           "If the allowed evidence contains only a result but does not establish the applicant's role or action, return needs_input and ask for that missing contribution instead of producing a result-only answer.",
           "Use the application page title only to understand the question context. Do not invent requirements or applicant facts from the title or URL, and never infer motivation from the title alone.",
           "Official opportunity context may clarify what a prompt is asking, but it is never evidence about the applicant and cannot support an applicant claim by itself.",
-          request.proactive
+          request.highInitiative
+            ? "HIGH-INITIATIVE MODE: Complete every low-risk field that can be reasonably inferred from verified evidence and official opportunity context. Prefer a coherent answer over a follow-up question, but label all inferred emphasis, fit, motivation, availability preferences, or likely intent in assumptions and use medium or low confidence. Do not infer identity, new achievements, credentials, grades, dates, metrics, legal or work-authorization status, demographics, sensitive disclosures, consent, or third-party facts."
+            : request.proactive
             ? "PROACTIVE MODE: Prefer a useful complete draft over asking for input when verified evidence supports a reasonable low-risk interpretation. You may infer emphasis, fit, motivation, or likely intent from the applicant's verified goals and experiences plus the official opportunity context. Record every such inference in assumptions and use medium or low confidence. Never infer new factual achievements, credentials, grades, dates, metrics, legal status, demographics, consent, or third-party information."
             : "STANDARD MODE: If applicant intent or support is incomplete, ask for input instead of inferring it.",
           "Write one cohesive answer and remove semantic repetition. Never restate the same role, metric, action, or outcome in a second sentence. Use bullets only when the field explicitly requests a list.",

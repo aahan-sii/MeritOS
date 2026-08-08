@@ -114,7 +114,19 @@ type ApplicationPacket = {
 type ApplicationQueueItem = {
   application: { id: string; opportunityId: string; status: "planning" | "drafting" | "review" | "submitted" | "withdrawn"; updatedAt: string };
   opportunity: { id: string; title: string; organization: string; url: string; deadline: string | null };
+  preparation: {
+    readiness: number;
+    supported: number;
+    requirementCount: number;
+    missing: number;
+    missingItems: string[];
+    requiredDocuments: string[];
+    visibleQuestions: number;
+    aiPolicy: "permitted" | "restricted" | "prohibited" | "unknown";
+  };
 };
+
+type InitiativeMode = "careful" | "proactive" | "high_initiative";
 
 type Story = {
   id: string;
@@ -176,6 +188,7 @@ const coverageAreas = [
   { name: "Motivation & goals", pattern: /motivation|goal|interest|why|aspiration/i },
   { name: "Preferences & availability", pattern: /availability|location preference|work preference|start date|schedule/i },
 ];
+const claimCategories = coverageAreas.map((area) => area.name);
 
 const navigation: Array<{ id: View; label: string; index: string }> = [
   { id: "overview", label: "Home", index: "00" },
@@ -281,6 +294,9 @@ export default function Home() {
   const [applicationPacket, setApplicationPacket] = useState<ApplicationPacket | null>(null);
   const [applicationQueue, setApplicationQueue] = useState<ApplicationQueueItem[]>([]);
   const [opportunityAlerts, setOpportunityAlerts] = useState(false);
+  const [selectedOpportunityUrls, setSelectedOpportunityUrls] = useState<string[]>([]);
+  const [selectedApplicationIds, setSelectedApplicationIds] = useState<string[]>([]);
+  const [initiativeMode, setInitiativeMode] = useState<InitiativeMode>("proactive");
 
   const verifiedClaims = useMemo(
     () => claims.filter((claim) => claim.status === "verified"),
@@ -308,6 +324,16 @@ export default function Home() {
     () => Array.from(new Set([...storyFocuses, ...(fit?.storyAngles.map((angle) => angle.title) || [])])),
     [fit],
   );
+  const recommendedSources = useMemo(() => {
+    const text = claims.map((claim) => `${claim.category} ${claim.statement} ${claim.evidence}`).join(" ");
+    return [
+      { name: "Résumé or CV", reason: "Identity, education, roles, projects, skills, and dates", present: /r[eé]sum[eé]|curriculum vitae|imported document/i.test(text), action: "upload" },
+      { name: "LinkedIn export", reason: "Role history, organizations, links, and profile summary", present: /linkedin/i.test(text), action: "context" },
+      { name: "Portfolio or personal site", reason: "Projects, public proof, writing, and technical work", present: /portfolio|personal website|github\.com|website/i.test(text), action: "context" },
+      { name: "Transcript", reason: "Courses, institution, grades, and academic timeline", present: /transcript/i.test(text), action: "upload" },
+      { name: "Prior essays or cover letters", reason: "Motivation, voice, values, and reusable stories", present: /essay|cover letter|personal statement/i.test(text), action: "upload" },
+    ];
+  }, [claims]);
 
   const filteredClaims = claims.filter((claim) => {
     const statusMatch =
@@ -353,7 +379,11 @@ export default function Home() {
   }, [isSignedIn, user?.fullName]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setOpportunityAlerts(window.localStorage.getItem("meritosOpportunityAlerts") === "true"), 0);
+    const timer = window.setTimeout(() => {
+      setOpportunityAlerts(window.localStorage.getItem("meritosOpportunityAlerts") === "true");
+      const savedMode = window.localStorage.getItem("meritosInitiativeMode");
+      if (savedMode === "careful" || savedMode === "proactive" || savedMode === "high_initiative") setInitiativeMode(savedMode);
+    }, 0);
     return () => window.clearTimeout(timer);
   }, []);
 
@@ -486,6 +516,24 @@ export default function Home() {
       announce(status === "verified" ? "Fact verified and available to MeritOS." : "Fact moved out of automatic use.");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "The fact could not be updated.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function changeClaimCategory(claim: Claim, category: string) {
+    if (!category.trim() || category === claim.category) return;
+    setBusy(`claim-${claim.id}`);
+    try {
+      const data = await readJson(await fetch(`/api/claims/${claim.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category }),
+      }));
+      setClaims((current) => current.map((item) => item.id === claim.id ? data.claim : item));
+      announce(`Moved this fact to ${category}.`);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "The fact category could not be changed.");
     } finally {
       setBusy("");
     }
@@ -665,6 +713,7 @@ export default function Home() {
       const data = await readJson(await fetch("/api/opportunity-watch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query }) }));
       const items: OpportunityResult[] = data.items || [];
       setOpportunityResults(items);
+      if (!background) setSelectedOpportunityUrls(items.slice(0, 5).map((item) => item.url));
       const known = new Set<string>(JSON.parse(window.localStorage.getItem("meritosKnownOpportunities") || "[]"));
       const newItems = items.filter((item) => !known.has(item.url));
       window.localStorage.setItem("meritosKnownOpportunities", JSON.stringify(items.map((item) => item.url).slice(0, 100)));
@@ -674,6 +723,57 @@ export default function Home() {
     } catch (requestError) {
       if (!background) setError(requestError instanceof Error ? requestError.message : "Opportunity sources could not be searched.");
     } finally { if (!background) setBusy(""); }
+  }
+
+  async function prepareSelectedApplications() {
+    const urls = selectedOpportunityUrls.slice(0, 10);
+    if (!urls.length) return;
+    setBusy("application-batch");
+    setError("");
+    let prepared = 0;
+    let latestPacket: ApplicationPacket | null = null;
+    for (const url of urls) {
+      try {
+        const preflightData = await readJson(await fetch("/api/opportunity-preflight", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url, pastedText: "" }),
+        }));
+        const packetData = await readJson(await fetch("/api/application-packet", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ opportunityId: preflightData.opportunityId, mode: initiativeMode }),
+        }));
+        latestPacket = packetData.packet;
+        prepared += 1;
+      } catch {
+        // Keep preparing the remaining user-selected opportunities.
+      }
+    }
+    if (latestPacket) setApplicationPacket(latestPacket);
+    const applicationsData = await readJson(await fetch("/api/applications"));
+    setApplicationQueue(applicationsData.applications || []);
+    setSelectedApplicationIds((applicationsData.applications || []).filter((item: ApplicationQueueItem) => item.application.status !== "submitted" && item.application.status !== "withdrawn").slice(0, prepared).map((item: ApplicationQueueItem) => item.application.id));
+    setBusy("");
+    announce(`${prepared} application${prepared === 1 ? "" : "s"} prepared. Review the exception queue, then hand the batch to Chrome.`);
+  }
+
+  function changeInitiativeMode(mode: InitiativeMode) {
+    setInitiativeMode(mode);
+    window.localStorage.setItem("meritosInitiativeMode", mode);
+    window.postMessage({ type: "MERITOS_SET_INITIATIVE_MODE", mode }, window.location.origin);
+    announce(mode === "high_initiative" ? "High-initiative mode enabled. Low-risk gaps will be inferred and labeled." : `${mode === "proactive" ? "Proactive" : "Careful"} mode enabled.`);
+  }
+
+  function handoffSelectedApplications() {
+    const selected = applicationQueue.filter((item) => selectedApplicationIds.includes(item.application.id));
+    if (!selected.length) return;
+    window.postMessage({
+      type: "MERITOS_QUEUE_APPLICATIONS",
+      mode: initiativeMode,
+      applications: selected.map((item) => ({ id: item.application.id, title: item.opportunity.title, organization: item.opportunity.organization, url: item.opportunity.url })),
+    }, window.location.origin);
+    announce(`${selected.length} application${selected.length === 1 ? "" : "s"} sent to the Chrome queue. MeritOS will open the first form and pause at true exceptions.`);
   }
 
   async function toggleOpportunityAlerts() {
@@ -719,7 +819,7 @@ export default function Home() {
       const data = await readJson(await fetch("/api/application-packet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ opportunityId }),
+        body: JSON.stringify({ opportunityId, mode: initiativeMode }),
       }));
       setApplicationPacket(data.packet);
       const applicationsData = await readJson(await fetch("/api/applications"));
@@ -1063,7 +1163,7 @@ export default function Home() {
                 <div className="mos-action-list">
                   {reviewClaims.length > 0 && <button onClick={() => goTo("review")}><b>01</b><span><strong>Review {reviewClaims.length} extracted facts</strong><small>Unverified information cannot enter forms.</small></span><i>→</i></button>}
                   {coveredAreas.length < coverageAreas.length && <button onClick={() => openFactForm(coverageAreas.find((area) => !coveredAreas.includes(area))?.name)}><b>02</b><span><strong>Fill a missing context area</strong><small>Your résumé does not explain everything that matters.</small></span><i>→</i></button>}
-                  {applicationQueue.length > 0 && <button onClick={() => goTo("fit")}><b>03</b><span><strong>Continue your application queue</strong><small>Review saved opportunities, requirements, and next actions.</small></span><i>→</i></button>}
+                  {applicationQueue.length > 0 && <button onClick={() => goTo("autopilot")}><b>03</b><span><strong>Continue your application queue</strong><small>Review exceptions and start selected forms in Chrome.</small></span><i>→</i></button>}
                   <button onClick={() => goTo("fit")}><b>{applicationQueue.length ? "04" : "03"}</b><span><strong>{fit ? "Refresh target fit" : "Tell MeritOS what you are targeting"}</strong><small>Turn your profile into a specific improvement plan.</small></span><i>→</i></button>
                   <button onClick={() => goTo("extension")}><b>{applicationQueue.length ? "05" : "04"}</b><span><strong>Install or reconnect the Chrome side panel</strong><small>Use approved profile facts on legitimate external forms.</small></span><i>→</i></button>
                 </div>
@@ -1082,8 +1182,8 @@ export default function Home() {
 
             <section className="mos-extension-callout mos-autopilot-callout" data-reveal>
               <img src="/meritos-mark-v2.png" alt="" />
-              <div><span className="mos-kicker">Find → rank → prepare</span><h3>The GitHub opportunity finder is on the website.</h3><p>Describe the role or program once. MeritOS scans live feeds, prepares the strongest match, and adds it to your queue without asking for a URL.</p></div>
-              <button className="mos-button dark" onClick={() => goTo("fit")}>Find applications</button>
+              <div><span className="mos-kicker">Find → rank → prepare in batches</span><h3>Application Autopilot is the main search workspace.</h3><p>Describe the role or program once. MeritOS searches nine public sources, ranks matches, and prepares your selected applications together.</p></div>
+              <button className="mos-button dark" onClick={() => goTo("autopilot")}>Open Autopilot</button>
             </section>
 
             <section className="mos-extension-callout" data-reveal>
@@ -1099,6 +1199,10 @@ export default function Home() {
             <section className="mos-page-intro" data-reveal>
               <div><span className="mos-kicker">Your source of truth</span><h2>Build the fullest truthful picture of you.</h2><p>Documents provide evidence. Direct context captures goals, motivations, preferences, and details that never make it onto a résumé.</p></div>
               <div className="mos-action-row"><button className="mos-button light" onClick={() => setShowContextImport(true)}>Import website / LinkedIn</button><button className="mos-button light" onClick={() => openFactForm()}>Add context</button><button className="mos-button dark" onClick={() => setShowImport(true)}>Upload document</button></div>
+            </section>
+            <section className="mos-source-plan" data-reveal>
+              <div><span className="mos-kicker">Smart source checklist</span><h3>Give MeritOS evidence once.</h3><p>Each source closes different gaps. Add the highest-value missing source; MeritOS re-checks coverage after every import.</p></div>
+              <div>{recommendedSources.map((source) => <article key={source.name} className={source.present ? "complete" : ""}><span>{source.present ? "✓" : "+"}</span><div><strong>{source.name}</strong><small>{source.present ? "Detected in your profile" : source.reason}</small></div>{!source.present && <button onClick={() => source.action === "context" ? setShowContextImport(true) : setShowImport(true)}>Add source</button>}</article>)}</div>
             </section>
             <section className="mos-coverage-grid" data-reveal>
               {coverageAreas.map((area) => {
@@ -1122,7 +1226,7 @@ export default function Home() {
                 {filteredClaims.map((claim) => (
                   <article key={claim.id}>
                     <span className={`mos-claim-state ${claim.status}`} />
-                    <div><small>{claim.category} · {evidenceSource(claim.evidence)}</small><strong>{claim.statement}</strong><p>{claim.status === "verified" ? "Available for supported answers" : claim.status === "restricted" ? "Sensitive and excluded unless you approve it" : "Excluded until you verify it"}</p></div>
+                    <div><small>{evidenceSource(claim.evidence)}</small><select className="mos-claim-category" value={claim.category} disabled={busy === `claim-${claim.id}`} onChange={(event) => void changeClaimCategory(claim, event.target.value)} aria-label={`Category for ${claim.statement}`}>{[...new Set([...claimCategories, claim.category])].map((category) => <option key={category}>{category}</option>)}</select><strong>{claim.statement}</strong><p>{claim.status === "verified" ? "Available for supported answers" : claim.status === "restricted" ? "Sensitive and excluded unless you approve it" : "Excluded until you verify it"}</p></div>
                     <div className="mos-claim-actions">
                       <button className="mos-button light small" disabled={busy === `claim-${claim.id}`} onClick={() => changeClaimStatus(claim, claim.status === "verified" ? "draft" : "verified")}>{claim.status === "verified" ? "Unverify" : "Verify"}</button>
                       <button className="mos-button ghost small" onClick={() => changeClaimStatus(claim, "restricted")}>Restrict</button>
@@ -1162,29 +1266,55 @@ export default function Home() {
         {view === "autopilot" && (
           <div className="mos-page">
             <section className="mos-target-hero mos-autopilot-hero" data-reveal>
-              <div><span className="mos-kicker">Autonomous application workspace</span><h2>Tell MeritOS what you want once.</h2><p>Autopilot searches GitHub opportunity repositories plus live Remotive, Arbeitnow, and Remote OK feeds, ranks matches against your verified profile, and prepares the strongest application before asking for final confirmation.</p></div>
+              <div><span className="mos-kicker">Application Autopilot</span><h2>One goal. A complete application queue.</h2><p>MeritOS searches public repositories, remote boards, startup discussions, and career feeds; ranks matches against your profile; and prepares several applications in one run.</p></div>
               <div className="mos-target-form">
                 <textarea value={opportunityQuery} onChange={(event) => setOpportunityQuery(event.target.value)} placeholder="Example: high-school computational biology internships for summer 2027, remote or near Phoenix" />
-                <button className="mos-button dark large" disabled={!(opportunityQuery.trim() || fit?.target || target) || Boolean(busy)} onClick={() => void scanOpportunityBoards(true)}>{busy ? "Searching and preparing…" : "Find & prepare applications"}</button>
+                <button className="mos-button dark large" disabled={!(opportunityQuery.trim() || fit?.target || target) || Boolean(busy)} onClick={() => void scanOpportunityBoards(false)}>{busy === "opportunity-watch" ? "Searching nine live sources…" : "Find matching applications"}</button>
                 <button className={opportunityAlerts ? "mos-button light active" : "mos-button light"} disabled={!opportunityQuery.trim()} onClick={() => void toggleOpportunityAlerts()}>{opportunityAlerts ? "Alerts on ✓" : "Alert me to new matches"}</button>
               </div>
             </section>
 
             <section className="mos-metric-strip" data-reveal>
-              <article><small>Search coverage</small><strong>6</strong><span>live boards and repositories</span></article>
+              <article><small>Search coverage</small><strong>9</strong><span>public feeds and repositories</span></article>
               <article><small>Matches found</small><strong>{opportunityResults.length}</strong><span>ranked against your profile</span></article>
               <article><small>Prepared queue</small><strong>{applicationQueue.filter((item) => !["submitted", "withdrawn"].includes(item.application.status)).length}</strong><span>waiting for confirmation</span></article>
-              <article><small>Final submission</small><strong>1 click</strong><span>always confirmed by you</span></article>
+              <article><small>Batch handoff</small><strong>1 approval</strong><span>for every selected application</span></article>
+            </section>
+
+            <section className="mos-initiative-panel" data-reveal>
+              <div><span className="mos-kicker">AI initiative level</span><h3>Choose how boldly MeritOS completes low-risk gaps.</h3><p>This changes inference behavior, never your underlying verified facts.</p></div>
+              <div className="mos-mode-grid" role="radiogroup" aria-label="AI initiative level">
+                <button className={initiativeMode === "careful" ? "active" : ""} onClick={() => changeInitiativeMode("careful")}><strong>Careful</strong><small>Verified evidence only</small></button>
+                <button className={initiativeMode === "proactive" ? "active" : ""} onClick={() => changeInitiativeMode("proactive")}><strong>Proactive</strong><small>Draft reasonable fit and wording</small></button>
+                <button className={initiativeMode === "high_initiative" ? "active" : ""} onClick={() => changeInitiativeMode("high_initiative")}><strong>High initiative</strong><small>Infer most low-risk answers; flag assumptions</small></button>
+              </div>
+              <p className="mos-fine-print">Never guessed: identity, credentials, grades, legal/work authorization, demographics, sensitive disclosures, consent, or final submission. It never silently presses Submit.</p>
             </section>
 
             <section className="mos-command-center" data-reveal>
-              <div className="mos-command-intro"><span className="mos-kicker">How autonomous mode behaves</span><h2>It fills first and asks only when the risk is real.</h2><p>Verified facts are used directly. Low-risk wording and fit inferences are drafted with visible confidence. MeritOS pauses only for missing credentials, legal or work-authorization answers, sensitive disclosures, consent, CAPTCHAs, account verification, or the final submission.</p><div className="mos-command-guardrail"><strong>No repetitive intake.</strong><span>If your résumé, website, LinkedIn export, or prior verified answer contains it, MeritOS reuses it instead of asking again.</span></div></div>
+              <div className="mos-command-intro"><span className="mos-kicker">Exception-first workflow</span><h2>MeritOS prepares the batch. You see only what needs judgment.</h2><p>Supported fields disappear into the ready count. The queue surfaces missing evidence, prohibited-AI policies, sensitive questions, account checks, and final confirmation instead of making you inspect every field.</p><div className="mos-command-guardrail"><strong>No repetitive intake.</strong><span>If your résumé, website, LinkedIn export, or prior verified answer contains it, MeritOS reuses it.</span></div></div>
               {applicationPacket ? <div className="mos-command-input"><span className="mos-pill success">Ready for confirmation</span><h3>{applicationPacket.title}</h3><p>{applicationPacket.organization} · {applicationPacket.answers.filter((answer) => answer.status === "draft").length} answers prepared</p><a className="mos-button dark large full" href={applicationPacket.sourceUrl} target="_blank" rel="noreferrer">Open prepared form for final review ↗</a><small className="mos-fine-print">The Chrome side panel completes supported fields on the external form and stops before Submit.</small></div> : <div className="mos-command-input"><strong>No prepared application yet</strong><p>Enter one search goal above. MeritOS will search, rank, preflight, and build the best packet in one run.</p></div>}
             </section>
 
-            {opportunityResults.length > 0 && <section className="mos-opportunity-radar" data-reveal><div><span className="mos-kicker">Ranked live matches</span><h3>Autopilot selected the first result. You can prepare another.</h3><p>Results combine structured job APIs and actively maintained public opportunity repositories.</p></div><div className="mos-radar-results">{opportunityResults.map((item, index) => <article key={`${item.source}-${item.url}`}><span><small>#{index + 1} · {item.company} · {item.location}</small><strong>{item.title}</strong><em>{item.fitScore ? `${item.fitScore}% directional fit · ` : ""}{item.source}</em></span><div><button disabled={Boolean(busy)} onClick={() => void analyzeOpportunityPage(item.url)}>Prepare</button><a href={item.url} target="_blank" rel="noreferrer">Source ↗</a></div></article>)}</div></section>}
+            {opportunityResults.length > 0 && <section className="mos-opportunity-radar" data-reveal>
+              <div className="mos-card-head"><div><span className="mos-kicker">Ranked live matches</span><h3>Select the applications MeritOS should prepare.</h3><p>The top five are selected by default. Nothing is submitted from this screen.</p></div><button className="mos-button dark" disabled={!selectedOpportunityUrls.length || Boolean(busy)} onClick={() => void prepareSelectedApplications()}>{busy === "application-batch" ? "Preparing batch…" : `Prepare ${selectedOpportunityUrls.length} selected`}</button></div>
+              <div className="mos-radar-results">{opportunityResults.map((item, index) => <article className={selectedOpportunityUrls.includes(item.url) ? "selected" : ""} key={`${item.source}-${item.url}`}><label className="mos-result-check"><input type="checkbox" checked={selectedOpportunityUrls.includes(item.url)} onChange={(event) => setSelectedOpportunityUrls((current) => event.target.checked ? [...new Set([...current, item.url])].slice(0, 10) : current.filter((url) => url !== item.url))} /><span><small>#{index + 1} · {item.company} · {item.location}</small><strong>{item.title}</strong><em>{item.fitScore ? `${item.fitScore}% directional fit · ` : ""}{item.source}</em></span></label><div><button disabled={Boolean(busy)} onClick={() => void analyzeOpportunityPage(item.url)}>Prepare now</button><a href={item.url} target="_blank" rel="noreferrer">Source ↗</a></div></article>)}</div>
+            </section>}
 
-            {applicationQueue.length > 0 && <section className="mos-application-queue" data-reveal><div><span className="mos-kicker">Confirmation queue</span><h3>Prepared applications</h3></div><div>{applicationQueue.filter((item) => !["submitted", "withdrawn"].includes(item.application.status)).map((item) => <a key={item.application.id} href={item.opportunity.url} target="_blank" rel="noreferrer"><span><strong>{item.opportunity.title}</strong><small>{item.opportunity.organization} · {item.application.status}</small></span><b>Review ↗</b></a>)}</div></section>}
+            {applicationQueue.length > 0 && <section className="mos-batch-queue" data-reveal>
+              <header><div><span className="mos-kicker">Application command center</span><h2>Approve the ready batch—not every field.</h2><p>Select prepared applications, inspect only their exceptions, then hand the batch to the Chrome extension.</p></div><button className="mos-button dark large" disabled={!selectedApplicationIds.length} onClick={handoffSelectedApplications}>Start {selectedApplicationIds.length} in Chrome ↗</button></header>
+              <div className="mos-batch-toolbar"><button onClick={() => setSelectedApplicationIds(applicationQueue.filter((item) => !["submitted", "withdrawn"].includes(item.application.status)).map((item) => item.application.id))}>Select all active</button><button onClick={() => setSelectedApplicationIds([])}>Clear</button><span>{selectedApplicationIds.length} selected</span></div>
+              <div className="mos-batch-list">{applicationQueue.filter((item) => !["submitted", "withdrawn"].includes(item.application.status)).map((item) => {
+                const preparation = item.preparation || { readiness: 0, supported: 0, requirementCount: 0, missing: 0, missingItems: [], requiredDocuments: [], visibleQuestions: 0, aiPolicy: "unknown" as const };
+                return <article key={item.application.id} className={selectedApplicationIds.includes(item.application.id) ? "selected" : ""}>
+                  <label><input type="checkbox" checked={selectedApplicationIds.includes(item.application.id)} onChange={(event) => setSelectedApplicationIds((current) => event.target.checked ? [...new Set([...current, item.application.id])] : current.filter((id) => id !== item.application.id))} /><span><strong>{item.opportunity.title}</strong><small>{item.opportunity.organization} · {item.application.status}</small></span></label>
+                  <div className="mos-readiness-meter"><span style={{ width: `${preparation.readiness}%` }} /><b>{preparation.readiness}% requirements supported</b></div>
+                  <div className="mos-queue-stats"><span>{preparation.supported}/{preparation.requirementCount || "?"} supported</span><span className={preparation.missing ? "warn" : "ready"}>{preparation.missing ? `${preparation.missing} exceptions` : "No known exceptions"}</span><span>{preparation.requiredDocuments.length} documents</span><span>AI policy: {preparation.aiPolicy}</span></div>
+                  {preparation.missingItems.length > 0 && <details><summary>What MeritOS still needs</summary><ul>{preparation.missingItems.map((missing, index) => <li key={`${missing}-${index}`}>{missing}</li>)}</ul></details>}
+                  <div className="mos-queue-actions"><button onClick={() => void buildApplicationPacket(item.opportunity.id)}>Open packet</button><a href={item.opportunity.url} target="_blank" rel="noreferrer">Official form ↗</a></div>
+                </article>;
+              })}</div>
+            </section>}
           </div>
         )}
 
@@ -1198,17 +1328,8 @@ export default function Home() {
               </div>
             </section>
             <section className="mos-command-center" data-reveal>
-              <div className="mos-command-intro">
-                <span className="mos-kicker">MeritOS Autopilot</span>
-                <h2>Describe what you want. MeritOS finds and prepares it.</h2>
-                <p>No links to paste. MeritOS scans current public opportunity feeds, selects the strongest profile match, reads its official requirements, and builds the first application packet automatically.</p>
-                <div className="mos-command-guardrail"><strong>Bold, but reversible.</strong><span>Low-risk assumptions are drafted and labeled. Credentials, legal answers, and consent are never guessed. It never silently presses Submit.</span></div>
-              </div>
-              <div className="mos-command-input">
-                <label><span>What should Autopilot find?</span><textarea value={opportunityQuery} onChange={(event) => setOpportunityQuery(event.target.value)} placeholder="High-school computational biology internships for summer 2027, preferably remote or in Arizona" /></label>
-                <button className="mos-button dark large full" disabled={!(opportunityQuery.trim() || fit?.target || target) || busy === "opportunity-watch" || busy === "opportunity-preflight" || busy === "application-packet"} onClick={() => void scanOpportunityBoards(true)}>{busy ? "Autopilot is working…" : "Find & prepare best match"}</button>
-                <small className="mos-fine-print">Search → rank → requirements scan → evidence-backed packet → external form handoff.</small>
-              </div>
+              <div className="mos-command-intro"><span className="mos-kicker">Separate jobs from strategy</span><h2>Target analysis improves your profile.</h2><p>Use this page for readiness, gaps, and positioning. The multi-source search and batch application queue now live in one dedicated Autopilot workspace.</p></div>
+              <div className="mos-command-input"><strong>{applicationQueue.length} saved application{applicationQueue.length === 1 ? "" : "s"}</strong><p>Open Autopilot to search, prepare, select, and hand several forms to Chrome.</p><button className="mos-button dark large full" onClick={() => goTo("autopilot")}>Open Application Autopilot →</button></div>
               {preflight && (
                 <div className="mos-preflight">
                   <header>
@@ -1254,11 +1375,6 @@ export default function Home() {
                 <section className="mos-grid equal">
                   <article className="mos-card" data-reveal><span className="mos-kicker">Missing personal context</span><h3>Questions only you can answer</h3><div className="mos-question-list">{fit.missingContextQuestions.map((question) => <button key={question} onClick={() => openFactForm("Motivation & goals", question)}><span>{question}</span><b>Add answer +</b></button>)}</div></article>
                   <article className="mos-card" data-reveal><span className="mos-kicker">Where to look</span><h3>Targeted opportunity searches</h3><div className="mos-search-leads">{fit.opportunitySearches.map((search) => <a key={search.query} href={`https://www.google.com/search?q=${encodeURIComponent(search.query)}`} target="_blank" rel="noreferrer"><span><strong>{search.label}</strong><small>{search.why}</small></span><b>Search ↗</b></a>)}</div><p className="mos-fine-print">Search leads are not availability claims. Confirm eligibility and deadlines on official program pages.</p></article>
-                </section>
-                <section className="mos-opportunity-radar" data-reveal>
-                  <div><span className="mos-kicker">Live opportunity feed</span><h3>The GitHub-powered finder is built in.</h3><p>MeritOS watches actively maintained public internship repositories, deduplicates official application links, and lets you prepare any alternate match without copying a URL.</p></div>
-                  <div className="mos-radar-controls"><input value={opportunityQuery} onChange={(event) => setOpportunityQuery(event.target.value)} placeholder={fit.target} /><button className="mos-button dark" disabled={busy === "opportunity-watch"} onClick={() => void scanOpportunityBoards(false)}>{busy === "opportunity-watch" ? "Checking live feeds…" : "Refresh matches"}</button></div>
-                  {opportunityResults.length > 0 && <div className="mos-radar-results">{opportunityResults.map((item, index) => <article key={`${item.source}-${item.url}`}><span><small>#{index + 1} · {item.company} · {item.location}</small><strong>{item.title}</strong><em>{item.fitScore ? `${item.fitScore}% directional fit · ` : ""}{item.matchReasons?.slice(0, 3).join(", ")} · {item.source}</em></span><div><button disabled={busy === "opportunity-preflight" || busy === "application-packet"} onClick={() => void analyzeOpportunityPage(item.url)}>Prepare this application</button><a href={item.url} target="_blank" rel="noreferrer">Official page ↗</a></div></article>)}</div>}
                 </section>
               </>
             ) : (

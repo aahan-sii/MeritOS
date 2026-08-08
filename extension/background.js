@@ -12,7 +12,38 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     else chrome.alarms.clear("meritos-opportunity-watch");
     return;
   }
+  if (message?.type === "MERITOS_SET_INITIATIVE_MODE") {
+    const mode = ["careful", "proactive", "high_initiative"].includes(message.mode) ? message.mode : "proactive";
+    chrome.storage.local.set({ meritosInitiativeMode: mode, meritosProactive: mode !== "careful" });
+    return;
+  }
+  if (message?.type === "MERITOS_QUEUE_APPLICATIONS") {
+    const applications = (Array.isArray(message.applications) ? message.applications : []).filter((item) => {
+      try { return new URL(item.url).protocol === "https:"; } catch { return false; }
+    }).slice(0, 20);
+    if (!applications.length) return;
+    const mode = ["careful", "proactive", "high_initiative"].includes(message.mode) ? message.mode : "proactive";
+    chrome.storage.local.set({ meritosApplicationQueue: applications, meritosInitiativeMode: mode, meritosProactive: mode !== "careful" });
+    chrome.tabs.create({ url: applications[0].url, active: true }).catch(() => {});
+    return;
+  }
   if (!sender.tab?.id) return;
+  if (message?.type === "MERITOS_FINAL_SUBMISSION_CONFIRMED") {
+    chrome.storage.local.get(["meritosApplicationQueue"]).then(async (stored) => {
+      const queue = Array.isArray(stored.meritosApplicationQueue) ? stored.meritosApplicationQueue : [];
+      if (!queue.length) return;
+      let submittedHost = "";
+      let queuedHost = "";
+      try { submittedHost = new URL(message.url).hostname.replace(/^www\./, ""); } catch {}
+      try { queuedHost = new URL(queue[0].url).hostname.replace(/^www\./, ""); } catch {}
+      if (!submittedHost || submittedHost !== queuedHost) return;
+      const remaining = queue.slice(1);
+      await chrome.storage.local.set({ meritosApplicationQueue: remaining });
+      if (remaining[0]?.url) chrome.tabs.create({ url: remaining[0].url, active: true }).catch(() => {});
+      else chrome.notifications.create({ type: "basic", iconUrl: "icons/icon128.png", title: "MeritOS batch complete", message: "You reached the end of this application queue." });
+    });
+    return;
+  }
   if (message?.type === "MERITOS_FORM_DETECTED") {
     chrome.sidePanel.setOptions({ tabId: sender.tab.id, path: "sidepanel.html", enabled: true }).catch(() => {});
     chrome.action.setBadgeBackgroundColor({ color: "#5d6bff" });

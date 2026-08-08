@@ -22,6 +22,8 @@ export async function POST(request: NextRequest) {
     const user = await requireApiUser();
     const body = asRecord(await request.json(), "body");
     const opportunityId = asString(body.opportunityId, "opportunityId", 120);
+    const highInitiative = body.mode === "high_initiative";
+    const proactive = body.mode === "proactive" || highInitiative;
     const db = await getDb();
     const [opportunity] = await db
       .select()
@@ -44,7 +46,7 @@ export async function POST(request: NextRequest) {
       maxLength: 1_200,
     }));
     const results = fields.length
-      ? await createGroundedDraftBatch({ fields, page: { title: `${preflight.title} — ${preflight.organization}`, url: opportunity.url }, evidence })
+      ? await createGroundedDraftBatch({ fields, page: { title: `${preflight.title} — ${preflight.organization}`, url: opportunity.url }, evidence, proactive, highInitiative })
       : [];
     const answers = fields.map((field, index) => ({ question: field.label, ...results[index] }));
     const missingInputs = Array.from(new Set([
