@@ -1,7 +1,7 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { DragEvent, useEffect, useMemo, useState } from "react";
+import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
 
 type View = "overview" | "profile" | "review" | "autopilot" | "fit" | "stories" | "interview" | "extension";
@@ -64,6 +64,7 @@ type OpportunityResult = {
   repository: string;
   fitScore?: number;
   matchReasons?: string[];
+  audienceFit?: "confirmed" | "unconfirmed" | "conflict" | "not_requested";
 };
 
 type OpportunityPreflight = {
@@ -189,6 +190,22 @@ const coverageAreas = [
   { name: "Preferences & availability", pattern: /availability|location preference|work preference|start date|schedule/i },
 ];
 const claimCategories = coverageAreas.map((area) => area.name);
+const onboardingPurposeOptions = [
+  { value: "jobs_internships", label: "Jobs and internships" },
+  { value: "scholarships_fellowships", label: "Scholarships and fellowships" },
+  { value: "college_graduate", label: "College or graduate programs" },
+  { value: "grants_awards", label: "Grants and awards" },
+  { value: "programs_service", label: "Programs, volunteering, or service" },
+  { value: "mixed", label: "A mix of applications" },
+];
+const onboardingPurposePrompts: Record<string, string> = {
+  jobs_internships: "Add recurring availability, preferred locations, remote or in-person preference, role types, and industries.",
+  scholarships_fellowships: "Add recurring academic interests, community impact, leadership themes, recommendation constraints, and award goals.",
+  college_graduate: "Add intended field, degree level, graduation timeline, research interests, program preferences, and geographic limits.",
+  grants_awards: "Add project stage, intended impact, collaborators, approximate timing, organization context, and common required documents.",
+  programs_service: "Add causes, availability, travel limits, languages, skills, age-related requirements you know, and preferred commitment level.",
+  mixed: "Add the facts that repeatedly appear on your applications: availability, location preferences, goals, constraints, links, and recurring themes.",
+};
 
 const navigation: Array<{ id: View; label: string; index: string }> = [
   { id: "overview", label: "Home", index: "00" },
@@ -253,8 +270,15 @@ function evidenceSource(evidence: string) {
 export default function Home() {
   const { isLoaded, isSignedIn, user } = useUser();
   const [view, setView] = useState<View>("overview");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuCloseRef = useRef<HTMLButtonElement>(null);
   const [accountLoading, setAccountLoading] = useState(true);
   const [profile, setProfile] = useState<Profile>({ displayName: "", headline: "", onboardingComplete: false });
+  const [onboardingPurpose, setOnboardingPurpose] = useState("jobs_internships");
+  const [onboardingLevel, setOnboardingLevel] = useState("");
+  const [onboardingLocation, setOnboardingLocation] = useState("");
+  const [onboardingRecurringContext, setOnboardingRecurringContext] = useState("");
   const [claims, setClaims] = useState<Claim[]>([]);
   const [fit, setFit] = useState<FitAnalysis | null>(null);
   const [stories, setStories] = useState<Story[]>([]);
@@ -388,6 +412,27 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    const mobileMenuTrigger = mobileMenuTriggerRef.current;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+    const backgroundNodes = Array.from(document.querySelectorAll<HTMLElement>(".mos-workspace,.mos-mobile-dock"));
+    backgroundNodes.forEach((node) => node.setAttribute("inert", ""));
+    document.body.style.overflow = "hidden";
+    const focusFrame = window.requestAnimationFrame(() => mobileMenuCloseRef.current?.focus());
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+      backgroundNodes.forEach((node) => node.removeAttribute("inert"));
+      mobileMenuTrigger?.focus();
+    };
+  }, [mobileMenuOpen]);
+
+  useEffect(() => {
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const elements = Array.from(document.querySelectorAll<HTMLElement>("[data-reveal]"));
     if (reduceMotion || !("IntersectionObserver" in window)) {
@@ -423,6 +468,7 @@ export default function Home() {
 
   function goTo(next: View) {
     setView(next);
+    setMobileMenuOpen(false);
     setError("");
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
   }
@@ -437,11 +483,28 @@ export default function Home() {
     setBusy("onboarding");
     setError("");
     try {
+      const purposeLabel = onboardingPurposeOptions.find((option) => option.value === onboardingPurpose)?.label || "Applications";
+      const onboardingFacts = [
+        { category: "Motivation & goals", statement: `Primary MeritOS use: ${purposeLabel}.` },
+        { category: "Education", statement: `Applicant-confirmed current education level: ${onboardingLevel}.` },
+        onboardingLocation.trim() ? { category: "Preferences & availability", statement: `Applicant-confirmed current location: ${onboardingLocation.trim()}.` } : null,
+        onboardingRecurringContext.trim() ? { category: "Preferences & availability", statement: `Applicant-confirmed recurring context for ${purposeLabel}: ${onboardingRecurringContext.trim()}` } : null,
+      ].filter((item): item is { category: string; statement: string } => Boolean(item?.statement));
+      const newFacts = onboardingFacts.filter((item) => !claims.some((claim) => claim.statement.trim().toLowerCase() === item.statement.trim().toLowerCase()));
+      const createdClaims = await Promise.all(newFacts.map(async (item) => {
+        const response = await readJson(await fetch("/api/claims", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...item, status: "verified", confidence: 100, evidence: [{ source: "Applicant-confirmed onboarding context" }], allowedUses: ["application_assistance", "fit_analysis", "interview_practice"] }),
+        }));
+        return response.claim as Claim;
+      }));
       const data = await readJson(await fetch("/api/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...profile, onboardingComplete: true }),
       }));
+      if (createdClaims.length) setClaims((current) => [...createdClaims, ...current]);
       setProfile(data.profile);
       announce("Your verified profile is ready.");
     } catch (requestError) {
@@ -954,8 +1017,9 @@ export default function Home() {
     try {
       const data = await readJson(await fetch("/api/extension/connect", { method: "POST" }));
       setExtensionToken(data.token);
+      window.postMessage({ type: "MERITOS_CONNECT_PROFILE", token: data.token, baseUrl: window.location.origin }, window.location.origin);
       await navigator.clipboard?.writeText(data.token);
-      announce("New connection key copied.");
+      announce("Chrome connection sent. The copied key remains available as a fallback.");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Connection key could not be created.");
     } finally {
@@ -998,8 +1062,11 @@ export default function Home() {
             </p>
             <div className="mos-action-row">
               <SignUpButton mode="modal"><button className="mos-button dark large">Build my profile</button></SignUpButton>
-              <a className="mos-button light large" href="/install">Get the extension</a>
+              <a className="mos-button light large" href="/install">Desktop extension</a>
             </div>
+            <p className="mos-mobile-companion-note">
+              On iPhone, MeritOS is your review and approval companion. The form-filling extension runs in desktop Chrome.
+            </p>
             <div className="mos-trust-row">
               <span>Searches live openings</span><span>Evidence linked</span><span>Stops before final submit</span>
             </div>
@@ -1053,6 +1120,16 @@ export default function Home() {
             <label>Full name<input value={profile.displayName} onChange={(event) => setProfile({ ...profile, displayName: event.target.value })} placeholder="Your full name" /></label>
             <label>Current direction<input value={profile.headline} onChange={(event) => setProfile({ ...profile, headline: event.target.value })} placeholder="What are you working toward?" /></label>
           </div>
+          <section className="mos-onboarding-intake" aria-labelledby="onboarding-intake-title">
+            <div><span className="mos-kicker">Application intent</span><h2 id="onboarding-intake-title">Teach MeritOS what your forms usually ask.</h2><p>These answers become verified reusable context, so the extension asks you fewer questions later.</p></div>
+            <div className="mos-field-grid">
+              <label>What will you use MeritOS for most?<select value={onboardingPurpose} onChange={(event) => setOnboardingPurpose(event.target.value)}>{onboardingPurposeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+              <label>Current stage<select value={onboardingLevel} onChange={(event) => setOnboardingLevel(event.target.value)}><option value="">Choose your current stage</option><option>Middle school</option><option>High school</option><option>College undergraduate</option><option>Graduate or professional school</option><option>Early career</option><option>Experienced professional</option><option>Career change</option><option>Other</option></select></label>
+              <label>Current city and state or region<input value={onboardingLocation} onChange={(event) => setOnboardingLocation(event.target.value)} placeholder="Example: Queen Creek, AZ" /></label>
+              <label>Context that appears repeatedly<textarea value={onboardingRecurringContext} onChange={(event) => setOnboardingRecurringContext(event.target.value)} placeholder={onboardingPurposePrompts[onboardingPurpose]} /></label>
+            </div>
+            <small>{onboardingPurposePrompts[onboardingPurpose]} MeritOS never guesses consent, legal status, sensitive demographics, or exact addresses.</small>
+          </section>
           <div className="mos-setup-row">
             <span><b>1</b><span><strong>Import your résumé or CV</strong><small>PDF, DOCX, or TXT. AI groups related bullets into usable facts.</small></span></span>
             <button className="mos-button light" onClick={() => setShowImport(true)}>Choose document</button>
@@ -1084,7 +1161,7 @@ export default function Home() {
           <ErrorMessage message={error} />
           <button
             className="mos-button dark large full"
-            disabled={!profile.displayName.trim() || verifiedClaims.length === 0 || busy === "onboarding"}
+            disabled={!profile.displayName.trim() || !onboardingLevel || verifiedClaims.length === 0 || busy === "onboarding"}
             onClick={finishOnboarding}
           >
             {busy === "onboarding" ? "Saving…" : "Finish profile setup"}
@@ -1098,6 +1175,15 @@ export default function Home() {
   }
 
   const pageTitle = navigation.find((item) => item.id === view)?.label || "Home";
+  const mobilePrimaryNavigation = navigation.filter((item) => ["overview", "profile", "autopilot"].includes(item.id));
+  const autopilotStages = [
+    { label: "Set your goal", complete: Boolean(opportunityQuery.trim() || fit?.target || target) },
+    { label: "Review matches", complete: opportunityResults.length > 0 },
+    { label: "Prepare applications", complete: applicationQueue.length > 0 },
+    { label: "Finish in Chrome", complete: Boolean(applicationPacket) },
+  ];
+  const firstIncompleteAutopilotStage = autopilotStages.findIndex((stage) => !stage.complete);
+  const autopilotStageIndex = firstIncompleteAutopilotStage === -1 ? autopilotStages.length - 1 : firstIncompleteAutopilotStage;
 
   return (
     <main className="mos-app">
@@ -1123,6 +1209,34 @@ export default function Home() {
           <UserButton />
         </div>
       </aside>
+
+      <nav className="mos-mobile-dock" aria-label="Primary workspace navigation">
+        {mobilePrimaryNavigation.map((item) => (
+          <button key={item.id} className={view === item.id ? "active" : ""} aria-current={view === item.id ? "page" : undefined} onClick={() => goTo(item.id)}>
+            <span>{item.index}</span><strong>{item.label}</strong>
+          </button>
+        ))}
+        <button ref={mobileMenuTriggerRef} className={!mobilePrimaryNavigation.some((item) => item.id === view) ? "active" : ""} aria-haspopup="dialog" aria-controls="mos-mobile-navigation" aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(true)}>
+          <span>04</span><strong>More</strong>
+        </button>
+      </nav>
+
+      {mobileMenuOpen && (
+        <div className="mos-mobile-sheet-backdrop" role="presentation" onClick={() => setMobileMenuOpen(false)}>
+          <section id="mos-mobile-navigation" className="mos-mobile-sheet" role="dialog" aria-modal="true" aria-labelledby="mobile-navigation-title" onClick={(event) => event.stopPropagation()}>
+            <header><div><span className="mos-kicker">Workspace</span><h2 id="mobile-navigation-title">Where do you want to go?</h2></div><button ref={mobileMenuCloseRef} className="mos-mobile-sheet-close" onClick={() => setMobileMenuOpen(false)} aria-label="Close navigation">Close</button></header>
+            <div className="mos-mobile-sheet-grid">
+              {navigation.map((item) => (
+                <button key={item.id} className={view === item.id ? "active" : ""} aria-current={view === item.id ? "page" : undefined} onClick={() => goTo(item.id)}>
+                  <span>{item.index}</span><strong>{item.label}</strong>
+                  {item.id === "review" && reviewClaims.length > 0 && <b>{reviewClaims.length} to review</b>}
+                </button>
+              ))}
+            </div>
+            <footer><span>Profile coverage</span><strong>{profileCoverage}%</strong><div><i style={{ width: `${profileCoverage}%` }} /></div></footer>
+          </section>
+        </div>
+      )}
 
       <section className="mos-workspace">
         <header className="mos-topbar">
@@ -1268,14 +1382,29 @@ export default function Home() {
             <section className="mos-target-hero mos-autopilot-hero" data-reveal>
               <div><span className="mos-kicker">Application Autopilot</span><h2>One goal. A complete application queue.</h2><p>MeritOS searches public repositories, remote boards, startup discussions, and career feeds; ranks matches against your profile; and prepares several applications in one run.</p></div>
               <div className="mos-target-form">
-                <textarea value={opportunityQuery} onChange={(event) => setOpportunityQuery(event.target.value)} placeholder="Example: high-school computational biology internships for summer 2027, remote or near Phoenix" />
-                <button className="mos-button dark large" disabled={!(opportunityQuery.trim() || fit?.target || target) || Boolean(busy)} onClick={() => void scanOpportunityBoards(false)}>{busy === "opportunity-watch" ? "Searching nine live sources…" : "Find matching applications"}</button>
+                <textarea id="mos-autopilot-goal" value={opportunityQuery} onChange={(event) => setOpportunityQuery(event.target.value)} placeholder="Example: high-school computational biology internships for summer 2027, remote or near Phoenix" />
+                <button className="mos-button dark large" disabled={!(opportunityQuery.trim() || fit?.target || target) || Boolean(busy)} onClick={() => void scanOpportunityBoards(false)}>{busy === "opportunity-watch" ? "Searching public feeds + the live web…" : "Find matching applications"}</button>
                 <button className={opportunityAlerts ? "mos-button light active" : "mos-button light"} disabled={!opportunityQuery.trim()} onClick={() => void toggleOpportunityAlerts()}>{opportunityAlerts ? "Alerts on ✓" : "Alert me to new matches"}</button>
               </div>
             </section>
 
+            <section className="mos-autopilot-runway" aria-label="Autopilot application progress" data-reveal>
+              <header><div><span className="mos-kicker">Your application run</span><h3>Step {autopilotStageIndex + 1} of {autopilotStages.length}: {autopilotStages[autopilotStageIndex].label}</h3></div><span className="mos-runway-status">{applicationQueue.length ? `${applicationQueue.length} prepared` : opportunityResults.length ? `${opportunityResults.length} matches` : "Ready to start"}</span></header>
+              <ol>
+                {autopilotStages.map((stage, index) => <li key={stage.label} className={stage.complete ? "complete" : index === autopilotStageIndex ? "active" : ""}><span>{stage.complete ? "Done" : index + 1}</span><strong>{stage.label}</strong></li>)}
+              </ol>
+              <div className="mos-runway-next">
+                <div><small>Next action</small><strong>{autopilotStages[autopilotStageIndex].label}</strong><p>{autopilotStageIndex === 0 ? "Describe the opportunity once; MeritOS handles the search plan." : autopilotStageIndex === 1 ? "Search current sources and choose the matches worth preparing." : autopilotStageIndex === 2 ? "Build grounded packets and surface only missing information." : "Open the prepared forms with the Chrome assistant and review before submission."}</p></div>
+                {autopilotStageIndex === 0 && <button className="mos-button dark" onClick={() => document.getElementById("mos-autopilot-goal")?.focus()}>Describe my goal</button>}
+                {autopilotStageIndex === 1 && <button className="mos-button dark" disabled={Boolean(busy)} onClick={() => void scanOpportunityBoards(false)}>Refresh matches</button>}
+                {autopilotStageIndex === 2 && <button className="mos-button dark" disabled={!selectedOpportunityUrls.length || Boolean(busy)} onClick={() => void prepareSelectedApplications()}>Prepare selected</button>}
+                {autopilotStageIndex === 3 && selectedApplicationIds.length > 0 && <button className="mos-button dark" onClick={handoffSelectedApplications}>Start selected in Chrome</button>}
+                {autopilotStageIndex === 3 && selectedApplicationIds.length === 0 && applicationQueue.length > 0 && <button className="mos-button dark" onClick={() => setSelectedApplicationIds(applicationQueue.filter((item) => !["submitted", "withdrawn"].includes(item.application.status)).map((item) => item.application.id))}>Select prepared applications</button>}
+              </div>
+            </section>
+
             <section className="mos-metric-strip" data-reveal>
-              <article><small>Search coverage</small><strong>9</strong><span>public feeds and repositories</span></article>
+              <article><small>Search coverage</small><strong>12+</strong><span>public feeds, repositories, and official-web search</span></article>
               <article><small>Matches found</small><strong>{opportunityResults.length}</strong><span>ranked against your profile</span></article>
               <article><small>Prepared queue</small><strong>{applicationQueue.filter((item) => !["submitted", "withdrawn"].includes(item.application.status)).length}</strong><span>waiting for confirmation</span></article>
               <article><small>Batch handoff</small><strong>1 approval</strong><span>for every selected application</span></article>
@@ -1298,7 +1427,7 @@ export default function Home() {
 
             {opportunityResults.length > 0 && <section className="mos-opportunity-radar" data-reveal>
               <div className="mos-card-head"><div><span className="mos-kicker">Ranked live matches</span><h3>Select the applications MeritOS should prepare.</h3><p>The top five are selected by default. Nothing is submitted from this screen.</p></div><button className="mos-button dark" disabled={!selectedOpportunityUrls.length || Boolean(busy)} onClick={() => void prepareSelectedApplications()}>{busy === "application-batch" ? "Preparing batch…" : `Prepare ${selectedOpportunityUrls.length} selected`}</button></div>
-              <div className="mos-radar-results">{opportunityResults.map((item, index) => <article className={selectedOpportunityUrls.includes(item.url) ? "selected" : ""} key={`${item.source}-${item.url}`}><label className="mos-result-check"><input type="checkbox" checked={selectedOpportunityUrls.includes(item.url)} onChange={(event) => setSelectedOpportunityUrls((current) => event.target.checked ? [...new Set([...current, item.url])].slice(0, 10) : current.filter((url) => url !== item.url))} /><span><small>#{index + 1} · {item.company} · {item.location}</small><strong>{item.title}</strong><em>{item.fitScore ? `${item.fitScore}% directional fit · ` : ""}{item.source}</em></span></label><div><button disabled={Boolean(busy)} onClick={() => void analyzeOpportunityPage(item.url)}>Prepare now</button><a href={item.url} target="_blank" rel="noreferrer">Source ↗</a></div></article>)}</div>
+              <div className="mos-radar-results">{opportunityResults.map((item, index) => <article className={selectedOpportunityUrls.includes(item.url) ? "selected" : ""} key={`${item.source}-${item.url}`}><label className="mos-result-check"><input type="checkbox" checked={selectedOpportunityUrls.includes(item.url)} onChange={(event) => setSelectedOpportunityUrls((current) => event.target.checked ? [...new Set([...current, item.url])].slice(0, 10) : current.filter((url) => url !== item.url))} /><span><small>#{index + 1} · {item.company} · {item.location}</small><strong>{item.title}</strong><span className={`mos-audience-fit ${item.audienceFit || "not_requested"}`}>{item.audienceFit === "confirmed" ? "Applicant level confirmed" : item.audienceFit === "unconfirmed" ? "Applicant level not stated — verify eligibility" : "Applicant level not filtered"}</span>{item.matchReasons?.length ? <span className="mos-match-reason">{item.matchReasons.slice(0, 2).join(" · ")}</span> : null}<em>{item.fitScore ? `${item.fitScore}% directional fit · ` : ""}{item.source}</em></span></label><div><button disabled={Boolean(busy)} onClick={() => void analyzeOpportunityPage(item.url)}>Prepare now</button><a href={item.url} target="_blank" rel="noreferrer">Source ↗</a></div></article>)}</div>
             </section>}
 
             {applicationQueue.length > 0 && <section className="mos-batch-queue" data-reveal>
@@ -1454,12 +1583,12 @@ export default function Home() {
             <section className="mos-install-grid">
               <article data-reveal><b>01</b><strong>Download and unzip</strong><p>Download the MeritOS ZIP and choose Extract all.</p></article>
               <article data-reveal><b>02</b><strong>Load it in Chrome</strong><p>At chrome://extensions, enable Developer mode and choose Load unpacked.</p></article>
-              <article data-reveal><b>03</b><strong>Connect your profile</strong><p>Create a one-time key below and paste it into the side panel.</p></article>
+              <article data-reveal><b>03</b><strong>Connect your profile</strong><p>Press Connect Chrome once. MeritOS securely hands the connection to every side panel; the copied key is only a fallback.</p></article>
               <article data-reveal><b>04</b><strong>Open a real form</strong><p>Proactive mode drafts low-risk gaps automatically and labels every inference for review.</p></article>
             </section>
             <section className="mos-card mos-key-card" data-reveal>
-              <div><span className="mos-kicker">Private connection</span><h3>Connect this profile to Chrome</h3><p>Creating a new key revokes the previous key. MeritOS shows it only once.</p></div>
-              <div>{extensionToken ? <code>{extensionToken}</code> : <span className="mos-key-placeholder">No new key shown</span>}<button className="mos-button dark" disabled={busy === "extension"} onClick={createExtensionConnection}>{busy === "extension" ? "Creating…" : extensionToken ? "Replace connection key" : "Create connection key"}</button></div>
+              <div><span className="mos-kicker">Private connection</span><h3>Connect this profile to Chrome</h3><p>One click connects every MeritOS side panel in this Chrome profile. Creating a replacement revokes the previous key.</p></div>
+              <div>{extensionToken ? <code>{extensionToken}</code> : <span className="mos-key-placeholder">Not connected from this session yet</span>}<button className="mos-button dark" disabled={busy === "extension"} onClick={createExtensionConnection}>{busy === "extension" ? "Connecting…" : extensionToken ? "Reconnect Chrome" : "Connect Chrome"}</button></div>
             </section>
             <section className="mos-safety-grid" data-reveal>
               <article><strong>It reads the visible form</strong><p>DOM and accessibility labels first—not hidden browser history.</p></article>

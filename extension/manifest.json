@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MeritOS Application Assistant",
-  "version": "0.14.0",
+  "version": "0.17.0",
   "description": "Prepare application forms from your evidence, highlight missing answers, and stop before submission.",
   "permissions": ["sidePanel", "storage", "activeTab", "tabs", "alarms", "notifications"],
   "host_permissions": ["http://localhost:3000/*", "https://*/*"],
@@ -12,8 +12,9 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["form-core.js", "content.js"],
-      "run_at": "document_idle"
+      "js": ["form-core.js", "navigation-core.js", "content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
     }
   ],
   "web_accessible_resources": [

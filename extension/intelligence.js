@@ -26,6 +26,10 @@
     if (/\b(work authori[sz]ation|legally authorized|visa sponsorship|citizenship status)\b/.test(value)) return "legal_status";
     if (/\b(consent|permission|agree to|authorize contact|may we contact)\b/.test(value)) return "consent";
     if (/\b(gender|race|ethnicity|disability|veteran status|sexual orientation|date of birth|birth date)\b/.test(value)) return "sensitive_demographic";
+    if (/\b(street address|mailing address|home address|residential address)\b/.test(value)) return "address";
+    if (/\b(current city|home city|city of residence|what city|city and state)\b/.test(value)) return "location_city";
+    if (/\b(current state|state of residence|province|territory)\b/.test(value)) return "location_state";
+    if (/\b(current location|where (?:are )?you based|location|geographic area|region)\b/.test(value)) return "location";
     if (/\b(current education level|level of education|school level|student level|academic level)\b/.test(value)) return "education_level";
     if (/\b(expected graduation|graduation (?:date|year)|class of)\b/.test(value)) return "graduation_year";
     if (/\b(current grade|grade level|year in school|class year)\b/.test(value)) return "grade_level";
@@ -51,6 +55,7 @@
     if (/links?|profiles?|online presence/.test(category) || /linkedin\.com|github\.com|https?:\/\//.test(value)) return "website";
     if (/contact/.test(category) && /\b(phone|mobile|telephone)\b/.test(value)) return "phone";
     if (/contact/.test(category) && (/\bemail\b/.test(value) || /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/.test(value))) return "email";
+    if (/location|availability|geograph/.test(category) || /\b(?:location|based in|located in|city of residence)\b/.test(value)) return "location";
     if (/^identity$/.test(category)) return "name";
     if (/^leadership$/.test(category)) return "leadership";
     if (/\b(startup|venture|entrepreneur|founder|founded|co-?founder|co-?founded|launched a company|business)\b/.test(value)) return "entrepreneurship";
@@ -137,6 +142,25 @@
     return /^[A-Za-z][A-Za-z'\-.]+(?:\s+[A-Za-z][A-Za-z'\-.]+){1,4}$/.test(value) ? value : "";
   }
 
+  function extractLocation(claims) {
+    const stateNames = { AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California", CO: "Colorado", CT: "Connecticut", DE: "Delaware", FL: "Florida", GA: "Georgia", HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa", KS: "Kansas", KY: "Kentucky", LA: "Louisiana", ME: "Maine", MD: "Maryland", MA: "Massachusetts", MI: "Michigan", MN: "Minnesota", MS: "Mississippi", MO: "Missouri", MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire", NJ: "New Jersey", NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota", OH: "Ohio", OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina", SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont", VA: "Virginia", WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming", DC: "District of Columbia" };
+    const ranked = [...claims].sort((left, right) => {
+      const score = (claim) => /location|contact|address/i.test(claim.category || "") ? 3 : claimIntent(claim) === "education" ? 2 : 1;
+      return score(right) - score(left);
+    });
+    for (const claim of ranked) {
+      const statement = String(claim.statement || "");
+      const matches = [...statement.matchAll(/\b([A-Z][A-Za-z.' -]{1,40}),\s*([A-Z]{2})(?:\b|\s+\d{5})/g)];
+      const match = matches.at(-1);
+      if (!match) continue;
+      const city = match[1].trim();
+      const state = match[2].toUpperCase();
+      const inferred = !/location|contact|address/i.test(`${claim.category} ${statement.slice(0, 40)}`);
+      return { city, state, stateName: stateNames[state] || state, full: `${city}, ${state}`, inferred, claim };
+    }
+    return null;
+  }
+
   function fitToOptions(text, field) {
     if (!text || !Array.isArray(field.options) || !field.options.length) return text;
     const option = FormCore.matchOption(text, field.options);
@@ -146,7 +170,9 @@
   function educationProfile(claims) {
     const evidence = claims.filter((claim) => claimIntent(claim) === "education");
     const joined = evidence.map((claim) => claim.statement || "").join(" \n ");
-    let graduation = joined.match(/(?:class of|expected(?: graduation)?(?: in)?|graduat(?:ing|ion)[^0-9]{0,12})\s*(?:may|june|spring|fall)?\s*(20\d{2})/i)?.[1] || "";
+    const graduationMatch = joined.match(/(?:class of|expected(?: graduation)?(?: in)?|graduat(?:ing|ion)[^0-9]{0,12})\s*(may|june|spring|fall)?\s*(20\d{2})/i);
+    let graduation = graduationMatch?.[2] || "";
+    let graduationDate = graduationMatch?.[1] && /^(may|june)$/i.test(graduationMatch[1]) ? `${graduationMatch[1]} ${graduation}` : graduation;
     let inferredGraduation = false;
     const explicitGrade = joined.match(/\b(9th|10th|11th|12th|freshman|sophomore|junior|senior)\s+(?:grade|student|year)?\b/i)?.[1] || "";
     if (!graduation && explicitGrade) {
@@ -156,6 +182,7 @@
       const academicEndYear = now.getMonth() >= 6 ? now.getFullYear() + 1 : now.getFullYear();
       if (grade) {
         graduation = String(academicEndYear + (12 - grade));
+        graduationDate = graduation;
         inferredGraduation = true;
       }
     }
@@ -173,7 +200,7 @@
         : /\b(master|graduate student)\b/i.test(joined)
           ? "Graduate"
           : /\b(ph\.?d|doctorate|doctoral)\b/i.test(joined) ? "Doctoral" : "";
-    return { level, graduation, grade: explicitGrade || inferredGrade, inferredGrade: Boolean(inferredGrade), inferredGraduation, evidence };
+    return { level, graduation, graduationDate, grade: explicitGrade || inferredGrade, inferredGrade: Boolean(inferredGrade), inferredGraduation, evidence };
   }
 
   function missing(source, intent) {
@@ -216,10 +243,22 @@
     if (["education_level", "graduation_year", "grade_level"].includes(intent)) {
       const education = educationProfile(claims);
       const raw = intent === "education_level" ? education.level : intent === "graduation_year" ? education.graduation : education.grade;
-      const text = fitToOptions(raw, field);
+      const temporal = intent === "graduation_year" && ["date", "month", "week", "datetime-local"].includes(field.type)
+        ? globalThis.MeritOSFormCore?.normalizeTemporalValue(education.graduationDate || raw, field.type)
+        : null;
+      const text = fitToOptions(temporal?.value || raw, field);
       if (!text) return missing(`No verified education evidence supports this ${intent.replaceAll("_", " ")} answer`, intent);
-      const inferred = (intent === "grade_level" && education.inferredGrade) || (intent === "graduation_year" && education.inferredGraduation);
-      return { text, source: inferred ? "Inferred from verified expected-graduation evidence · review individually" : "Verified education evidence", intent, kind: inferred ? "inference" : "evidence" };
+      const inferred = (intent === "grade_level" && education.inferredGrade) || (intent === "graduation_year" && (education.inferredGraduation || temporal?.inferred));
+      return { text, source: inferred ? "Estimated from verified expected-graduation evidence · review individually" : "Verified education evidence", intent, kind: inferred ? "inference" : "evidence" };
+    }
+    if (intent === "address") return missing("A street or mailing address requires your explicit profile input; MeritOS will not guess it from a school or employer", intent);
+    if (["location", "location_city", "location_state"].includes(intent)) {
+      const location = extractLocation(claims);
+      if (!location) return missing("Add your current city and state under Location & availability", intent);
+      const raw = intent === "location_city" ? location.city : intent === "location_state" ? location.stateName : location.full;
+      const text = fitToOptions(raw, field) || (intent === "location_state" ? fitToOptions(location.state, field) : "");
+      if (!text) return missing("Your verified location does not match one of this field’s available choices", intent);
+      return { text, source: location.inferred ? "Estimated from a verified school or organization location · review individually" : "Applicant-confirmed location", intent, kind: location.inferred ? "inference" : "evidence" };
     }
     if (intent === "legal_status") return missing("Legal or work-authorization answers require your explicit application-specific confirmation", intent);
     if (intent === "consent") return missing("Consent choices always require your direct selection", intent);

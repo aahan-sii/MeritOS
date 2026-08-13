@@ -17,6 +17,7 @@ function fieldFrom(value: unknown): DraftField | null {
   return {
     id: typeof candidate.id === "string" ? candidate.id.slice(0, 200) : undefined,
     label: candidate.label,
+    description: typeof candidate.description === "string" ? candidate.description.slice(0, 500) : undefined,
     kind: typeof candidate.kind === "string" ? candidate.kind.slice(0, 80) : undefined,
     type: typeof candidate.type === "string" ? candidate.type.slice(0, 80) : undefined,
     name: typeof candidate.name === "string" ? candidate.name.slice(0, 160) : undefined,

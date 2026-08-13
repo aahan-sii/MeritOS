@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { DM_Sans, Lora } from "next/font/google";
 import "./globals.css";
@@ -42,7 +42,21 @@ export const metadata: Metadata = {
   icons: {
     icon: "/meritos-mark-v2.png",
     shortcut: "/meritos-mark-v2.png",
+    apple: "/meritos-mark-v2.png",
   },
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "MeritOS",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#113c31",
 };
 
 export default function RootLayout({

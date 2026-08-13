@@ -29,3 +29,22 @@ test("application runs continue only through safe progress actions and stop befo
   assert.equal(formCore.progressActionKind("I agree to the terms"), "");
   assert.equal(formCore.progressActionKind("Authorize background check"), "");
 });
+
+test("formats graduation evidence for native calendar controls", () => {
+  assert.deepEqual(formCore.normalizeTemporalValue("Expected 2027", "date"), { value: "2027-06-01", inferred: true });
+  assert.deepEqual(formCore.normalizeTemporalValue("May 2027", "month"), { value: "2027-05", inferred: true });
+  assert.deepEqual(formCore.normalizeTemporalValue("05/24/2027", "date"), { value: "2027-05-24", inferred: false });
+  assert.deepEqual(formCore.normalizeTemporalValue("2:30 PM", "time"), { value: "14:30", inferred: false });
+});
+
+test("classifies exact actions for on-page guidance", () => {
+  assert.equal(formCore.guidanceActionKind("Create account"), "signup");
+  assert.equal(formCore.guidanceActionKind("Sign in"), "login");
+  assert.equal(formCore.guidanceActionKind("Start application"), "apply");
+  assert.equal(formCore.guidanceActionKind("Continue"), "next");
+});
+
+test("splits multi-select answers without splitting normal commas", () => {
+  assert.deepEqual(formCore.splitMultipleValues("Research; Leadership | Community"), ["Research", "Leadership", "Community"]);
+  assert.deepEqual(formCore.splitMultipleValues("Phoenix, Arizona"), ["Phoenix, Arizona"]);
+});

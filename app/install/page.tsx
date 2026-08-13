@@ -10,11 +10,15 @@ export default function InstallExtensionPage() {
       </nav>
       <section className="install-hero">
         <div className="install-mark"><img src="/meritos-mark-v2.png" alt="" /></div>
-        <span className="eyebrow">MeritOS for Chrome</span>
+        <span className="eyebrow">MeritOS for desktop Chrome</span>
         <h1>Your application assistant, beside the form.</h1>
-        <p>Install once, connect your verified MeritOS profile, then see an instant MeritOS prompt whenever Chrome detects an application form.</p>
+        <p>On a Mac, Windows PC, or Chromebook, install once and connect your verified profile. MeritOS then appears beside supported application forms.</p>
         <a className="primary-button install-download" href="/MeritOS-Chrome-Extension.zip" download>Download for Chrome <span aria-hidden="true">↓</span></a>
         <small className="install-note">Chrome requires you to approve an extension before it can run. MeritOS never submits forms.</small>
+        <aside className="install-device-note">
+          <strong>Using an iPhone?</strong>
+          <span>Use the MeritOS website to review matches, answer exceptions, and approve a batch. Continue on desktop Chrome when a form is ready to fill.</span>
+        </aside>
       </section>
       <section className="install-steps" aria-label="Chrome extension installation steps">
         <article><span>1</span><div><strong>Download and unzip</strong><p>Open the downloaded ZIP, then choose <em>Extract all</em>.</p></div></article>

@@ -98,6 +98,24 @@ test("derives reviewable education answers from verified school evidence", () =>
   assert.equal(intelligence.suggest(levelField, claims, identity).text, "High school");
   const graduationField = { ...field("Expected graduation year", "select"), options: [{ label: "2026" }, { label: "2027" }, { label: "2028" }] };
   assert.equal(intelligence.suggest(graduationField, claims, identity).text, "2027");
+  const graduationDate = intelligence.suggest(field("Expected graduation date", "date"), claims, identity);
+  assert.equal(graduationDate.text, "2027-05-01");
+  assert.equal(graduationDate.kind, "inference");
+});
+
+test("derives reviewable city and state answers from school location evidence", () => {
+  const city = intelligence.suggest(field("Current city", "text"), claims, identity);
+  const state = intelligence.suggest(field("State of residence", "text"), claims, identity);
+  assert.equal(city.text, "Queen Creek");
+  assert.equal(state.text, "Arizona");
+  assert.equal(city.kind, "inference");
+  assert.match(city.source, /review/i);
+});
+
+test("does not invent an exact street address from a school location", () => {
+  const result = intelligence.suggest(field("Home street address", "text"), claims, identity);
+  assert.equal(result.text, "");
+  assert.match(result.source, /will not guess|explicit profile input/i);
 });
 
 test("labels raw narrative matches as evidence fragments rather than finished answers", () => {

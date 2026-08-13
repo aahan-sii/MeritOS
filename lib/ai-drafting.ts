@@ -6,6 +6,7 @@ export { buildDraftingPrompt, canDraftField, dedupeDraftText, dedupeEvidence, ne
 export type DraftField = {
   id?: string;
   label: string;
+  description?: string;
   kind?: string;
   type?: string;
   name?: string;
@@ -27,7 +28,7 @@ type DraftRequest = {
 };
 
 export type DraftResult =
-  | { status: "draft"; draft: string; usedEvidenceIds: string[]; questions: string[]; confidence: "high" | "medium" | "low"; assumptions: string[] }
+  | { status: "draft"; draft: string; alternatives: string[]; usedEvidenceIds: string[]; questions: string[]; confidence: "high" | "medium" | "low"; assumptions: string[] }
   | { status: "needs_input"; draft: ""; usedEvidenceIds: string[]; questions: string[]; confidence: "low"; assumptions: string[] }
   | { status: "not_configured"; draft: ""; usedEvidenceIds: string[]; questions: string[]; confidence: "low"; assumptions: string[] };
 
@@ -91,6 +92,7 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
             : "STANDARD MODE: If applicant intent or support is incomplete, ask for input instead of inferring it.",
           "Write one cohesive answer and remove semantic repetition. Never restate the same role, metric, action, or outcome in a second sentence. Use bullets only when the field explicitly requests a list.",
           "For radio, checkbox, or select fields, draft must exactly equal one supplied option label and only when evidence directly supports it.",
+          "For open-text fields with medium or low confidence, alternatives may contain up to two meaningfully different grounded phrasings that use the same allowed evidence and introduce no new facts. Return an empty alternatives array for high-confidence or choice fields.",
           "If support is incomplete, return needs_input with one specific question. Return one result for every fieldId and only JSON matching the schema.",
         ].join(" "),
       },
@@ -106,6 +108,7 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
           fields: eligible.map(({ field, evidence }) => ({
             fieldId: field.id || field.label,
             label: cleanDraftingText(field.label, 500),
+            description: cleanDraftingText(field.description, 500),
             type: cleanDraftingText(field.type, 80),
             control: cleanDraftingText(field.control, 40),
             maxCharacters: normalizedMaxLength(field),
@@ -130,9 +133,10 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
               items: {
                 type: "object",
                 additionalProperties: false,
-                required: ["fieldId", "status", "draft", "usedEvidenceIds", "questions", "confidence", "assumptions"],
+                required: ["fieldId", "status", "draft", "alternatives", "usedEvidenceIds", "questions", "confidence", "assumptions"],
                 properties: {
                   fieldId: { type: "string" }, status: { type: "string", enum: ["draft", "needs_input"] }, draft: { type: "string" },
+                  alternatives: { type: "array", maxItems: 2, items: { type: "string" } },
                   usedEvidenceIds: { type: "array", items: { type: "string" } }, questions: { type: "array", items: { type: "string" } },
                   confidence: { type: "string", enum: ["high", "medium", "low"] }, assumptions: { type: "array", items: { type: "string" } },
                 },
@@ -143,7 +147,7 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
       },
     },
   });
-  let payload: { items?: Array<{ fieldId?: string; status?: string; draft?: string; usedEvidenceIds?: unknown; questions?: unknown; confidence?: unknown; assumptions?: unknown }> };
+  let payload: { items?: Array<{ fieldId?: string; status?: string; draft?: string; alternatives?: unknown; usedEvidenceIds?: unknown; questions?: unknown; confidence?: unknown; assumptions?: unknown }> };
   try { payload = JSON.parse(response.output_text); } catch { throw new Error("The drafting service returned an invalid response."); }
   const byId = new Map((payload.items || []).map((item) => [String(item.fieldId), item]));
   return prepared.map((item) => {
@@ -157,15 +161,19 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
     const confidence = ["high", "medium", "low"].includes(String(parsed?.confidence)) ? parsed?.confidence as "high" | "medium" | "low" : "low";
     const assumptions = Array.isArray(parsed?.assumptions) ? parsed.assumptions.map((assumption) => cleanDraftingText(assumption, 240)).filter(Boolean).slice(0, 4) : [];
     let draft = dedupeDraftText(parsed?.draft, normalizedMaxLength(item.field));
+    let alternatives = Array.isArray(parsed?.alternatives)
+      ? [...new Set(parsed.alternatives.map((alternative) => dedupeDraftText(alternative, normalizedMaxLength(item.field))).filter((alternative) => alternative && alternative !== draft))].slice(0, 2)
+      : [];
     if (Array.isArray(item.field.options) && item.field.options.length && draft) {
       const option = item.field.options.find((candidate) => {
         const label = typeof candidate === "string" ? candidate : candidate.label || candidate.value || "";
         return label.toLowerCase().trim() === draft.toLowerCase().trim();
       });
       draft = option ? (typeof option === "string" ? option : option.label || option.value || "") : "";
+      alternatives = [];
     }
     return parsed?.status === "draft" && draft && usedEvidenceIds.length
-      ? { status: "draft", draft, usedEvidenceIds, questions: [], confidence, assumptions }
+      ? { status: "draft", draft, alternatives, usedEvidenceIds, questions: [], confidence, assumptions }
       : needsInput(questions[0] || "The verified evidence does not yet support a truthful answer to this question.");
   });
 }

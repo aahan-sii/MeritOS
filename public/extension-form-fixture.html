@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MeritOS ATS Form Fixture</title></head>
+  <body>
+    <main>
+      <h1>Research internship application</h1>
+      <form>
+        <label for="full-name">Full name</label><input id="full-name" name="full_name" autocomplete="name" required>
+        <label for="email">Email address</label><input id="email" name="email" type="email" autocomplete="email" required>
+        <label for="graduation-date">Expected graduation date</label><input id="graduation-date" name="graduation_date" type="date" required>
+        <label for="hours">Hours available each week</label><input id="hours" name="hours_per_week" type="number" min="1" max="60" required>
+        <label for="project">Describe a project that demonstrates your fit.</label><textarea id="project" name="project" maxlength="1200" aria-describedby="project-help" required></textarea>
+        <p id="project-help">Introduce your role, actions, and supported outcome.</p>
+        <fieldset><legend>Current education level</legend><label><input type="radio" name="level" value="High school"> High school</label><label><input type="radio" name="level" value="Undergraduate"> Undergraduate</label></fieldset>
+        <label for="resume">Résumé</label><input id="resume" type="file" name="resume" accept=".pdf,.doc,.docx" required>
+        <button type="button">Next</button><button type="submit">Submit application</button>
+      </form>
+      <script>setTimeout(() => { const label = document.createElement('label'); label.htmlFor = 'dynamic-phone'; label.textContent = 'Phone number'; const input = document.createElement('input'); input.id = 'dynamic-phone'; input.name = 'phone'; input.type = 'tel'; document.querySelector('form').insertBefore(label, document.querySelector('form button')); label.after(input); }, 250);</script>
+    </main>
+  </body>
+</html>
