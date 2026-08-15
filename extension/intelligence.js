@@ -4,7 +4,7 @@
     matchOption: () => null,
     thirdPartyContactQuestion: (value) => /\b(recommender|reference|teacher|counselor|mentor|supervisor|manager|parent|guardian)\b/i.test(String(value || "")),
   };
-  const narrativeIntents = new Set(["research", "leadership", "project", "community", "entrepreneurship", "nonprofit", "work", "creative", "teaching"]);
+  const narrativeIntents = new Set(["research", "leadership", "project", "community", "entrepreneurship", "nonprofit", "work", "creative", "teaching", "skills", "experience", "extracurriculars", "contribution", "growth_ideas", "outreach_strategy", "writing_experience"]);
 
   function fieldText(field) {
     return `${field.label || ""} ${field.name || ""} ${field.type || ""}`.toLowerCase();
@@ -22,19 +22,40 @@
     if (field.type === "email" || /\b(your e-?mail|applicant e-?mail|primary e-?mail|email address)\b/.test(value)) return "email";
     if (/\b(first|given) name\b/.test(value)) return "first_name";
     if (/\b(last|family|surname) name\b/.test(value)) return "last_name";
-    if (/\b(full name|legal name|applicant name|your name|preferred name)\b/.test(value)) return "name";
+    if (/\b(full name|legal name|applicant name|your name|you name|preferred name)\b/.test(value)) return "name";
     if (/\b(work authori[sz]ation|legally authorized|visa sponsorship|citizenship status)\b/.test(value)) return "legal_status";
     if (/\b(consent|permission|agree to|authorize contact|may we contact)\b/.test(value)) return "consent";
     if (/\b(gender|race|ethnicity|disability|veteran status|sexual orientation|date of birth|birth date)\b/.test(value)) return "sensitive_demographic";
     if (/\b(street address|mailing address|home address|residential address)\b/.test(value)) return "address";
+    if (/\bcity\s*,\s*state(?:\s*,\s*country)?\b/.test(value)) return "location";
     if (/\b(current city|home city|city of residence|what city|city and state)\b/.test(value)) return "location_city";
     if (/\b(current state|state of residence|province|territory)\b/.test(value)) return "location_state";
     if (/\b(current location|where (?:are )?you based|location|geographic area|region)\b/.test(value)) return "location";
     if (/\b(current education level|level of education|school level|student level|academic level)\b/.test(value)) return "education_level";
     if (/\b(expected graduation|graduation (?:date|year)|class of)\b/.test(value)) return "graduation_year";
+    if (/\b(grade and age|age and grade)\b/.test(value)) return "grade_and_age";
     if (/\b(current grade|grade level|year in school|class year)\b/.test(value)) return "grade_level";
+    if (/\b(maximum time commitment|hours? (?:can|could|will|do) you (?:commit|contribute)|hours? per week|weekly hours?|time commitment weekly)\b/.test(value)) return "time_commitment";
+    if (/\b(dates? and times?|interview availability|available for an interview|times? (?:when|you are) available)\b/.test(value)) return "availability";
+    if (/\b(submit|upload|attach) (?:your )?(?:resume|résumé|cv)\b|\bresume upload\b|^(?:resume|résumé|cv)\s+file\b/.test(value)) return "resume_upload";
+    if (/\b(previous writing work|writing sample|sample of (?:your )?writing)\b/.test(value)) return "writing_sample";
+    if (/\b(how did you find|where did you find|how (?:did|do) you hear|who referred|referral source)\b/.test(value)) return "referral_source";
+    if (/\b(position(?:\s*\(| choices?)|positions? (?:you want|you prefer)|ranked.*position|type of intern|role preference)\b/.test(value)) return "role_preference";
+    if (/\b(social media handles?|social profiles?|instagram handle|tiktok handle|x handle)\b/.test(value)) return "social_profile";
+    if (/\b(who is interviewing|name of interviewer|interviewer name)\b/.test(value)) return "third_party_name";
+    if (/\bwho is your provider\b|\bservice provider\b/.test(value)) return "provider";
+    if (/\b(any questions|questions or concerns|do you have questions)\b/.test(value)) return "other_questions";
+    if (/\b(starting|start) (?:your own )?(?:club|chapter)\b/.test(value)) return "club_interest";
+    if (/\bhow many (?:students|signups?|people).*(?:per week|each week)\b/.test(value)) return "signup_estimate";
+    if (/\b(outreach methods?|recruitment methods?|how.*(?:get|help).*students.*sign(?:ed)? up)\b/.test(value)) return "outreach_strategy";
+    if (/\b(ideas?.*(?:grow\w*|promot\w*|fundrais\w*)|grow.*how.*execute|bring to .* department)\b/.test(value)) return "growth_ideas";
+    if (/\b(what (?:will|would|can) you bring|contribute to (?:this|the)|value.*bring)\b/.test(value)) return "contribution";
+    if (/\b(top \d+ extracurricular|extracurriculars?|activities outside)\b/.test(value)) return "extracurriculars";
+    if (/\b(skills? or experiences?|what skills?|skills? .*help you|strengths? .*bring)\b/.test(value)) return "skills";
+    if (/\b(relevant experience|experience .*this role|experience .*position)\b/.test(value)) return "experience";
+    if (/\b(writing in response to prompts|essay writing experience|experience in writing)\b/.test(value)) return "writing_experience";
     if (/\b(school|institution|university|college|organization|organisation|employer)\b/.test(value)) return "institution";
-    if (/\b(why.*apply|why.*fellowship|motivation|motivated|interest in this|personal statement|statement of purpose)\b/.test(value)) return "motivation";
+    if (/\b(why.*apply|why.*fellowship|why.*(?:want|join|interested)|motivation|motivated|interest in this|personal statement|statement of purpose)\b/.test(value)) return "motivation";
     if (/\b(startup|venture|entrepreneur|founder|co-?founder|business you (?:built|started)|company you (?:built|started))\b/.test(value)) return "entrepreneurship";
     if (/\b(nonprofit|non-profit|charity|social impact organization|mission-driven organization)\b/.test(value)) return "nonprofit";
     if (/\b(work experience|employment|professional experience|job responsibilities|role at|workplace|career experience)\b/.test(value)) return "work";
@@ -43,7 +64,7 @@
     if (/\b(research|laboratory|experiment|publication|academic investigation)\b/.test(value)) return "research";
     if (/\b(leadership|initiative|led a|manage|mentor|team leader)\b/.test(value)) return "leadership";
     if (/\b(project|built|developed|created|technical work|impact)\b/.test(value)) return "project";
-    if (/\b(community|volunteer|service|outreach|contributed|civic)\b/.test(value)) return "community";
+    if (/\b(community|volunteer|service|outreach|contributed|civic|fundrais\w*)\b/.test(value)) return "community";
     if (/\b(award|honou?r|achievement|distinction|recognition|scholarship)\b/.test(value)) return "award";
     if (/\b(education|coursework|degree|gpa|academic background)\b/.test(value)) return "education";
     return "unknown";
@@ -55,6 +76,7 @@
     if (/links?|profiles?|online presence/.test(category) || /linkedin\.com|github\.com|https?:\/\//.test(value)) return "website";
     if (/contact/.test(category) && /\b(phone|mobile|telephone)\b/.test(value)) return "phone";
     if (/contact/.test(category) && (/\bemail\b/.test(value) || /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/.test(value))) return "email";
+    if (/skills?|certification/.test(category) || /^(?:skills?|technologies|technical skills|programming languages?)\s*[:|]/.test(String(claim.statement || "").trim().toLowerCase())) return "skills";
     if (/location|availability|geograph/.test(category) || /\b(?:location|based in|located in|city of residence)\b/.test(value)) return "location";
     if (/^identity$/.test(category)) return "name";
     if (/^leadership$/.test(category)) return "leadership";
@@ -89,10 +111,17 @@
   }
 
   function selectEvidence(intent, claims) {
-    const compatible = (type) => type === intent
-      || (intent === "nonprofit" && type === "community")
-      || (intent === "work" && type === "teaching")
-      || (intent === "creative" && type === "project");
+    const compatibility = {
+      nonprofit: ["community"], work: ["teaching"], creative: ["project"],
+      skills: ["research", "project", "work", "creative", "teaching"],
+      experience: ["research", "leadership", "project", "community", "entrepreneurship", "nonprofit", "work", "creative", "teaching", "skills"],
+      extracurriculars: ["leadership", "community", "research", "project", "award", "teaching", "creative", "entrepreneurship", "nonprofit"],
+      contribution: ["leadership", "community", "research", "project", "work", "skills"],
+      growth_ideas: ["leadership", "community", "entrepreneurship", "nonprofit", "project"],
+      outreach_strategy: ["community", "leadership", "nonprofit"],
+      writing_experience: ["creative", "project", "work", "education"],
+    };
+    const compatible = (type) => type === intent || (compatibility[intent] || []).includes(type);
     const matches = claims.map((claim) => ({ claim, type: claimIntent(claim) })).filter((item) => compatible(item.type));
     if (!narrativeIntents.has(intent)) return matches.slice(0, 1);
     return matches
@@ -140,6 +169,24 @@
     const claim = claims.find((item) => /^identity$/i.test(String(item.category || "")));
     const value = String(claim?.statement || "").replace(/^name\s*:\s*/i, "").trim();
     return /^[A-Za-z][A-Za-z'\-.]+(?:\s+[A-Za-z][A-Za-z'\-.]+){1,4}$/.test(value) ? value : "";
+  }
+
+  function explicitProfileValue(claims, intent) {
+    const categoryPattern = intent === "availability" ? /availability|schedule/i : intent === "time_commitment" ? /availability|commitment|preference/i : /personal|profile|identity/i;
+    for (const claim of claims) {
+      if (!categoryPattern.test(String(claim.category || ""))) continue;
+      const statement = String(claim.statement || "").trim();
+      if (intent === "time_commitment") {
+        const hours = statement.match(/\b\d+(?:\s*[-–]\s*\d+)?\s*(?:hours?|hrs?)(?:\s+per\s+week|\/week|\s+weekly)?\b/i)?.[0];
+        if (hours) return hours;
+      } else if (intent === "age") {
+        const age = statement.match(/\bage\s*:?\s*(1[3-9]|[2-9]\d)\b/i)?.[1];
+        if (age) return age;
+      } else if (intent === "availability" && /\b(?:available|availability|monday|tuesday|wednesday|thursday|friday|saturday|sunday|weekdays?|weekends?)\b/i.test(statement)) {
+        return statement.replace(/^availability\s*:\s*/i, "");
+      }
+    }
+    return "";
   }
 
   function extractLocation(claims) {
@@ -234,6 +281,11 @@
       const url = extractUrl(claims, /./);
       return url ? { text: fitToOptions(url, field), source: "Verified profile link", intent, kind: "evidence" } : missing("Add a personal website, portfolio, or GitHub URL under Links & profiles", intent);
     }
+    if (intent === "social_profile") {
+      const profile = claims.find((claim) => /links?|profiles?|social/i.test(String(claim.category || "")) && /(?:https?:\/\/|@[a-z0-9._-]{2,})/i.test(String(claim.statement || "")));
+      const text = String(profile?.statement || "").match(/https?:\/\/[^\s)\]}]+|@[a-z0-9._-]{2,}/i)?.[0] || "";
+      return text ? { text: fitToOptions(text, field), source: "Verified social or profile link", intent, kind: "evidence" } : missing("Add the exact social handle or profile you want to share", intent);
+    }
     if (intent === "institution") {
       const institution = bestInstitution(claims);
       const conciseInstitution = institution ? String(institution.statement).split(/\s*(?:\||—|–)\s*/)[0].trim() : "";
@@ -251,6 +303,25 @@
       const inferred = (intent === "grade_level" && education.inferredGrade) || (intent === "graduation_year" && (education.inferredGraduation || temporal?.inferred));
       return { text, source: inferred ? "Estimated from verified expected-graduation evidence · review individually" : "Verified education evidence", intent, kind: inferred ? "inference" : "evidence" };
     }
+    if (intent === "grade_and_age") {
+      const education = educationProfile(claims);
+      const age = explicitProfileValue(claims, "age");
+      return education.grade && age
+        ? { text: fitToOptions(`${education.grade}; age ${age}`, field), source: "Verified education and explicit profile evidence", intent, kind: "evidence" }
+        : missing("This combined field needs both your grade and your explicitly provided age", intent);
+    }
+    if (["time_commitment", "availability"].includes(intent)) {
+      const value = explicitProfileValue(claims, intent);
+      return value ? { text: fitToOptions(value, field), source: "Applicant-confirmed availability evidence", intent, kind: "evidence" } : missing(`Add your ${intent === "time_commitment" ? "weekly time commitment" : "interview availability"} under Location & availability`, intent);
+    }
+    if (intent === "resume_upload") return missing("Browser security requires you to choose the résumé file yourself", intent);
+    if (intent === "writing_sample") return missing("Choose or link the writing sample you want to submit for this application", intent);
+    if (intent === "referral_source") return missing("Add how you found this opportunity or who referred you", intent);
+    if (intent === "role_preference") return missing("Choose the role or position you want for this specific application", intent);
+    if (intent === "provider") return missing("Add the provider required for this specific program", intent);
+    if (intent === "club_interest") return missing("This is a new preference decision and needs your choice", intent);
+    if (intent === "signup_estimate") return missing("Set a realistic commitment for this program; MeritOS will not invent a quota", intent);
+    if (intent === "other_questions") return missing("Optional questions or concerns are left for you", intent);
     if (intent === "address") return missing("A street or mailing address requires your explicit profile input; MeritOS will not guess it from a school or employer", intent);
     if (["location", "location_city", "location_state"].includes(intent)) {
       const location = extractLocation(claims);
@@ -275,7 +346,7 @@
     const intent = questionIntent(field);
     if (["third_party_email", "third_party_name", "third_party_phone", "legal_status", "consent", "sensitive_demographic", "name", "first_name", "last_name", "email", "phone", "linkedin", "website"].includes(intent)) return false;
     if (proactive && ["motivation", "unknown"].includes(intent)) return true;
-    return ["research", "leadership", "project", "community", "entrepreneurship", "nonprofit", "work", "creative", "teaching", "award", "education", "education_level", "graduation_year", "grade_level"].includes(intent);
+    return ["research", "leadership", "project", "community", "entrepreneurship", "nonprofit", "work", "creative", "teaching", "award", "education", "education_level", "graduation_year", "grade_level", "skills", "experience", "extracurriculars", "contribution", "growth_ideas", "outreach_strategy", "writing_experience"].includes(intent);
   }
 
   root.MeritOSIntelligence = { questionIntent, claimIntent, bestInstitution, suggest, canDraftField };
