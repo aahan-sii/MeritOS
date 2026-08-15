@@ -3,8 +3,8 @@ const state = {
   coverage: [],
   identity: { displayName: "", email: "", headline: "" },
   activeOpportunity: null,
-  proactive: true,
-  initiativeMode: "proactive",
+  proactive: false,
+  initiativeMode: "careful",
   autoAnalysisKey: "",
   fields: [],
   suggestions: new Map(),
@@ -707,15 +707,11 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
 
 (async () => {
   const stored = await chrome.storage.local.get(["meritosBaseUrl", "meritosToken", "meritosProfile", "meritosProactive", "meritosInitiativeMode", "meritosApplicationRun", "meritosApplicationRunReport", "meritosApplicationQueue"]);
-  state.proactive = stored.meritosProactive !== false;
+  state.proactive = stored.meritosProactive === true;
   state.initiativeMode = ["careful", "proactive", "high_initiative"].includes(stored.meritosInitiativeMode) ? stored.meritosInitiativeMode : (state.proactive ? "proactive" : "careful");
-  state.applicationRun = stored.meritosApplicationRun || null;
-  if (!state.applicationRun && Array.isArray(stored.meritosApplicationQueue) && stored.meritosApplicationQueue.length) {
-    const tab = await activeTab();
-    const [first, ...queue] = stored.meritosApplicationQueue;
-    state.applicationRun = { active: true, phase: "opening", message: "Finding the official application…", url: first.url, opportunity: first, queue, tabId: tab?.id, steps: 0, navigationHops: 0, visitedUrls: [first.url], autoContinue: true, startedAt: new Date().toISOString() };
-    await persistApplicationRun();
-  }
+  // Opportunity search/autopilot is intentionally disabled in the accuracy-validation release.
+  state.applicationRun = null;
+  await chrome.storage.local.remove(["meritosApplicationRun", "meritosApplicationQueue"]);
   state.lastRunReport = stored.meritosApplicationRunReport || null;
   $("proactiveMode").checked = state.proactive;
   $("autoContinueRun").checked = state.applicationRun?.autoContinue !== false;

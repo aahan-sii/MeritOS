@@ -210,12 +210,8 @@ const onboardingPurposePrompts: Record<string, string> = {
 const navigation: Array<{ id: View; label: string; index: string }> = [
   { id: "overview", label: "Home", index: "00" },
   { id: "profile", label: "Build profile", index: "01" },
-  { id: "review", label: "Review profile", index: "02" },
-  { id: "autopilot", label: "Autopilot", index: "03" },
-  { id: "fit", label: "Target analysis", index: "04" },
-  { id: "stories", label: "Story bank", index: "05" },
-  { id: "interview", label: "Interview practice", index: "06" },
-  { id: "extension", label: "Chrome extension", index: "07" },
+  { id: "review", label: "Verify facts", index: "02" },
+  { id: "extension", label: "Test autofill", index: "03" },
 ];
 
 function Logo({ compact = false }: { compact?: boolean }) {
@@ -1027,6 +1023,28 @@ export default function Home() {
     }
   }
 
+  async function copyValidationTemplate() {
+    const template = [
+      "MeritOS accuracy test",
+      "Scenario: internship / research / scholarship / grant / nonprofit",
+      "Profile source used:",
+      "Fields detected:",
+      "Correct answers:",
+      "Wrong answers (question → suggested answer):",
+      "Important fields missed:",
+      "Fields MeritOS correctly left blank:",
+      "Did date, radio, select, and checkbox controls fill?",
+      "Did MeritOS stop before final Submit?",
+      "Anything confusing:",
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(template);
+      announce("Test report template copied. Paste it back into this chat after your run.");
+    } catch {
+      announce("Copy was blocked by the browser. Use the checklist shown on this page.");
+    }
+  }
+
   if (!isLoaded || (isSignedIn && accountLoading)) {
     return (
       <main className="mos-loading">
@@ -1057,8 +1075,8 @@ export default function Home() {
             <span className="mos-kicker">One profile. Every application form.</span>
             <h1>Your real experience,<br /><em>ready wherever you apply.</em></h1>
             <p>
-              MeritOS builds a verified profile, searches live opportunity boards, prepares matching
-              applications, and fills legitimate external forms through a Chrome side panel.
+              MeritOS turns your approved résumé facts into accurate suggestions beside legitimate
+              application forms. You inspect every fact, fix mistakes once, and keep final control.
             </p>
             <div className="mos-action-row">
               <SignUpButton mode="modal"><button className="mos-button dark large">Build my profile</button></SignUpButton>
@@ -1068,14 +1086,14 @@ export default function Home() {
               On iPhone, MeritOS is your review and approval companion. The form-filling extension runs in desktop Chrome.
             </p>
             <div className="mos-trust-row">
-              <span>Searches live openings</span><span>Evidence linked</span><span>Stops before final submit</span>
+              <span>Facts you approved</span><span>Evidence linked</span><span>Stops before final submit</span>
             </div>
           </div>
           <div className="mos-landing-visual" data-reveal>
             <div className="mos-profile-stack">
               <article><small>VERIFIED PROFILE</small><strong>Research experience</strong><span>Résumé · approved by you</span></article>
               <article><small>LIVE FORM</small><strong>Suggested answer</strong><span>2 supporting facts · review first</span></article>
-              <article><small>TARGET FIT</small><strong>Evidence gap found</strong><span>Add outcome + motivation</span></article>
+              <article><small>VISIBLE LIMIT</small><strong>Answer needs you</strong><span>No supporting evidence found</span></article>
             </div>
             <img src="/meritos-mark-v2.png" alt="" />
           </div>
@@ -1083,8 +1101,8 @@ export default function Home() {
         <section className="mos-flow" id="how-it-works" aria-label="How MeritOS works">
           <article><b>01</b><strong>Build your profile</strong><p>Upload documents and add context a résumé cannot capture.</p></article>
           <article><b>02</b><strong>Verify every fact</strong><p>Control what is true, sensitive, or safe to reuse.</p></article>
-          <article><b>03</b><strong>Tell Autopilot what to find</strong><p>MeritOS searches current boards and prepares the strongest matches.</p></article>
-          <article><b>04</b><strong>Review before submission</strong><p>The extension fills external forms and stops at the irreversible final action.</p></article>
+          <article><b>03</b><strong>Open the real form</strong><p>The Chrome side panel detects supported factual questions beside the application.</p></article>
+          <article><b>04</b><strong>Approve before filling</strong><p>MeritOS fills what you approve and stops at the irreversible final action.</p></article>
         </section>
         <section className="mos-landing-intelligence" id="profile-intelligence">
           <div className="mos-landing-section-copy" data-reveal>
@@ -1098,7 +1116,7 @@ export default function Home() {
           </div>
           <div className="mos-intelligence-stack" data-reveal>
             <article><b>01</b><span><strong>Context coverage</strong><small>See what MeritOS knows—and what it still needs.</small></span></article>
-            <article><b>02</b><span><strong>Target scan</strong><small>Compare your verified profile with one specific direction.</small></span></article>
+            <article><b>02</b><span><strong>Evidence boundaries</strong><small>Unsupported and sensitive answers stay visibly unresolved.</small></span></article>
             <article><b>03</b><span><strong>External form assistant</strong><small>Review grounded answers beside the real application.</small></span></article>
             <img src="/meritos-mark-v2.png" alt="" />
           </div>
@@ -1175,7 +1193,7 @@ export default function Home() {
   }
 
   const pageTitle = navigation.find((item) => item.id === view)?.label || "Home";
-  const mobilePrimaryNavigation = navigation.filter((item) => ["overview", "profile", "autopilot"].includes(item.id));
+  const mobilePrimaryNavigation = navigation.filter((item) => ["overview", "profile", "extension"].includes(item.id));
   const autopilotStages = [
     { label: "Set your goal", complete: Boolean(opportunityQuery.trim() || fit?.target || target) },
     { label: "Review matches", complete: opportunityResults.length > 0 },
@@ -1253,22 +1271,22 @@ export default function Home() {
           <div className="mos-page mos-overview">
             <section className="mos-hero" data-reveal>
               <div>
-                <span className="mos-pill inverse">{fit ? "Target-aware workspace" : "Verified profile workspace"}</span>
-                <h2>{fit ? `Find and prepare applications for ${fit.target}.` : "Build your profile once. Let Autopilot find the applications."}</h2>
-                <p>{fit?.summary || "Upload your evidence and connect public profile context. MeritOS automatically creates reusable stories, searches live openings, and prepares grounded application packets."}</p>
+                <span className="mos-pill inverse">Accuracy validation release</span>
+                <h2>Fill repetitive application fields from facts you can inspect.</h2>
+                <p>Upload your résumé, correct the extracted profile, and test MeritOS beside a safe application form. Unsupported, sensitive, and opportunity-specific answers remain visible instead of being invented.</p>
                 <div className="mos-action-row">
-                  <button className="mos-button pale" onClick={() => goTo("autopilot")}>Open Autopilot</button>
-                  <button className="mos-button text-inverse" onClick={() => goTo("profile")}>Improve my profile →</button>
+                  <button className="mos-button pale" onClick={() => goTo(verifiedClaims.length ? "extension" : "profile")}>{verifiedClaims.length ? "Test my profile" : "Build my profile"}</button>
+                  <button className="mos-button text-inverse" onClick={() => goTo("review")}>Review extracted facts →</button>
                 </div>
               </div>
-              <ReadinessVisual value={readinessValue} label={fit ? formatBand(fit.readinessBand) : "profile coverage"} />
+              <ReadinessVisual value={readinessValue} label="profile coverage" />
             </section>
 
             <section className="mos-metric-strip" data-reveal>
               <article><small>Verified facts</small><strong>{verifiedClaims.length}</strong><span>safe for supported answers</span></article>
               <article><small>Needs your review</small><strong>{reviewClaims.length}</strong><span>excluded from autofill</span></article>
               <article><small>Context coverage</small><strong>{coveredAreas.length}/{coverageAreas.length}</strong><span>areas represented</span></article>
-              <article><small>Active applications</small><strong>{applicationQueue.filter((item) => !["submitted", "withdrawn"].includes(item.application.status)).length}</strong><span>saved in your command center</span></article>
+              <article><small>Chrome connection</small><strong>{extensionToken ? "Ready" : "Off"}</strong><span>{extensionToken ? "profile connected" : "connect before testing"}</span></article>
             </section>
 
             <section className="mos-grid two-one">
@@ -1277,9 +1295,7 @@ export default function Home() {
                 <div className="mos-action-list">
                   {reviewClaims.length > 0 && <button onClick={() => goTo("review")}><b>01</b><span><strong>Review {reviewClaims.length} extracted facts</strong><small>Unverified information cannot enter forms.</small></span><i>→</i></button>}
                   {coveredAreas.length < coverageAreas.length && <button onClick={() => openFactForm(coverageAreas.find((area) => !coveredAreas.includes(area))?.name)}><b>02</b><span><strong>Fill a missing context area</strong><small>Your résumé does not explain everything that matters.</small></span><i>→</i></button>}
-                  {applicationQueue.length > 0 && <button onClick={() => goTo("autopilot")}><b>03</b><span><strong>Continue your application queue</strong><small>Review exceptions and start selected forms in Chrome.</small></span><i>→</i></button>}
-                  <button onClick={() => goTo("fit")}><b>{applicationQueue.length ? "04" : "03"}</b><span><strong>{fit ? "Refresh target fit" : "Tell MeritOS what you are targeting"}</strong><small>Turn your profile into a specific improvement plan.</small></span><i>→</i></button>
-                  <button onClick={() => goTo("extension")}><b>{applicationQueue.length ? "05" : "04"}</b><span><strong>Install or reconnect the Chrome side panel</strong><small>Use approved profile facts on legitimate external forms.</small></span><i>→</i></button>
+                  <button onClick={() => goTo("extension")}><b>03</b><span><strong>Run the factual autofill test</strong><small>Check identity, education, dates, choices, and unsupported questions on a safe form.</small></span><i>→</i></button>
                 </div>
               </article>
               <article className="mos-card mos-context-card" data-reveal>
@@ -1294,16 +1310,10 @@ export default function Home() {
               </article>
             </section>
 
-            <section className="mos-extension-callout mos-autopilot-callout" data-reveal>
-              <img src="/meritos-mark-v2.png" alt="" />
-              <div><span className="mos-kicker">Find → rank → prepare in batches</span><h3>Application Autopilot is the main search workspace.</h3><p>Describe the role or program once. MeritOS searches nine public sources, ranks matches, and prepares your selected applications together.</p></div>
-              <button className="mos-button dark" onClick={() => goTo("autopilot")}>Open Autopilot</button>
-            </section>
-
             <section className="mos-extension-callout" data-reveal>
               <img src="/meritos-mark-v2.png" alt="" />
-              <div><span className="mos-kicker">External forms only</span><h3>MeritOS works beside the website where you are actually applying.</h3><p>The extension scans visible fields, shows evidence-backed suggestions, lets you approve them together, and never submits.</p></div>
-              <button className="mos-button dark" onClick={() => goTo("extension")}>Set up extension</button>
+              <div><span className="mos-kicker">One workflow to prove</span><h3>Does your verified profile fill a real form accurately?</h3><p>Use the controlled testing lab first. If an answer is wrong, the test tells us whether extraction, matching, or form filling needs work.</p></div>
+              <button className="mos-button dark" onClick={() => goTo("extension")}>Start accuracy test</button>
             </section>
           </div>
         )}
@@ -1577,18 +1587,27 @@ export default function Home() {
         {view === "extension" && (
           <div className="mos-page">
             <section className="mos-extension-hero" data-reveal>
-              <div><span className="mos-kicker">The actual application workflow</span><h2>Your profile lives here. Autofill happens on the external form.</h2><p>Install the Chrome extension, connect it once, then open a legitimate grant, scholarship, program, or job form. MeritOS detects fields and opens beside the page.</p><div className="mos-action-row"><a className="mos-button pale large" href="/MeritOS-Chrome-Extension.zip">Download extension</a><a className="mos-button text-inverse" href="/test-form" target="_blank">Open form testing lab →</a></div></div>
+              <div><span className="mos-kicker">Accuracy validation</span><h2>Prove your profile works before trusting it on a real application.</h2><p>Connect the extension, open the controlled testing lab, and check factual fields, complex controls, and safety boundaries. A wrong answer is a failed test—not something to quietly submit.</p><div className="mos-action-row"><a className="mos-button pale large" href="/MeritOS-Chrome-Extension.zip">Download extension</a><a className="mos-button text-inverse" href="/test-form" target="_blank">Open testing lab →</a></div></div>
               <img src="/meritos-mark-v2.png" alt="" />
             </section>
             <section className="mos-install-grid">
               <article data-reveal><b>01</b><strong>Download and unzip</strong><p>Download the MeritOS ZIP and choose Extract all.</p></article>
               <article data-reveal><b>02</b><strong>Load it in Chrome</strong><p>At chrome://extensions, enable Developer mode and choose Load unpacked.</p></article>
-              <article data-reveal><b>03</b><strong>Connect your profile</strong><p>Press Connect Chrome once. MeritOS securely hands the connection to every side panel; the copied key is only a fallback.</p></article>
-              <article data-reveal><b>04</b><strong>Open a real form</strong><p>Proactive mode drafts low-risk gaps automatically and labels every inference for review.</p></article>
+              <article data-reveal><b>03</b><strong>Connect your profile</strong><p>Press Connect Chrome once. The same verified profile should remain available across tabs.</p></article>
+              <article data-reveal><b>04</b><strong>Run the safe test</strong><p>Open the testing lab and compare every suggested answer with your approved profile facts.</p></article>
             </section>
             <section className="mos-card mos-key-card" data-reveal>
               <div><span className="mos-kicker">Private connection</span><h3>Connect this profile to Chrome</h3><p>One click connects every MeritOS side panel in this Chrome profile. Creating a replacement revokes the previous key.</p></div>
               <div>{extensionToken ? <code>{extensionToken}</code> : <span className="mos-key-placeholder">Not connected from this session yet</span>}<button className="mos-button dark" disabled={busy === "extension"} onClick={createExtensionConnection}>{busy === "extension" ? "Connecting…" : extensionToken ? "Reconnect Chrome" : "Connect Chrome"}</button></div>
+            </section>
+            <section className="mos-validation-suite" data-reveal>
+              <header><div><span className="mos-kicker">Three tests decide whether it is useful</span><h2>Pass these before using MeritOS on a real form.</h2></div><button className="mos-button light" onClick={copyValidationTemplate}>Copy test report</button></header>
+              <div>
+                <article><b>A</b><span><strong>Factual accuracy</strong><p>Name, your email, phone, school, education level, graduation date, and profile link should match your verified profile exactly.</p></span></article>
+                <article><b>B</b><span><strong>Form coverage</strong><p>Date pickers, radio buttons, button-style choices, selects, checkboxes, numbers, short answers, and long answers must all be detected.</p></span></article>
+                <article><b>C</b><span><strong>Trust boundaries</strong><p>Recommender contact, consent, unsupported motivation, file uploads, and final Submit must remain yours unless truthful evidence explicitly supports an answer.</p></span></article>
+              </div>
+              <footer><div><strong>Testing order</strong><span>Internship → Research → Scholarship. Stop and report the first wrong answer; one confident false answer matters more than ten correct easy fields.</span></div><a className="mos-button dark large" href="/test-form" target="_blank">Start Test A →</a></footer>
             </section>
             <section className="mos-safety-grid" data-reveal>
               <article><strong>It reads the visible form</strong><p>DOM and accessibility labels first—not hidden browser history.</p></article>

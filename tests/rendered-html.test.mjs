@@ -64,3 +64,23 @@ test("keeps the signed-in workspace usable on iPhone-sized screens", () => {
   assert.match(layout, /viewportFit: "cover"/);
   assert.match(manifest, /display: "standalone"/);
 });
+
+test("ships the focused accuracy-validation workflow", () => {
+  const workspace = readFileSync(resolve("app/page.tsx"), "utf8");
+  const testLab = readFileSync(resolve("app/test-form/TestFormLab.tsx"), "utf8");
+  const sidepanel = readFileSync(resolve("extension/sidepanel.html"), "utf8");
+  const navigationBlock = workspace.match(/const navigation:[\s\S]*?\n\];/)?.[0] || "";
+
+  assert.match(navigationBlock, /Build profile/);
+  assert.match(navigationBlock, /Verify facts/);
+  assert.match(navigationBlock, /Test autofill/);
+  assert.doesNotMatch(navigationBlock, /Autopilot|Target analysis|Story bank|Interview practice/);
+  assert.match(workspace, /Three tests decide whether it is useful/);
+  assert.match(workspace, /one confident false answer matters more than ten correct easy fields/i);
+  assert.match(testLab, /Accuracy checkpoint/);
+  assert.match(testLab, /Boundary failure/);
+  assert.match(testLab, /Check this form/);
+  assert.match(sidepanel, /class="application-run"[^>]*hidden/);
+  assert.match(sidepanel, /Scan \+ prepare/);
+  assert.match(sidepanel, /Review every selected answer before filling/);
+});
