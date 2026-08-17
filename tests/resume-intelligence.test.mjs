@@ -64,3 +64,9 @@ test("preserves short identity and contact lines that experience parsing used to
   assert.ok(facts.some((fact) => fact.category === "Contact details" && /555-0188/.test(fact.statement)));
   assert.ok(facts.some((fact) => fact.category === "Links & profiles"));
 });
+
+test("recovers narrative categories when a PDF keeps education active across columns", () => {
+  const evidence = extractResumeEvidence(`EDUCATION\nNorth Valley High School\n\nResearch Intern\nConducted laboratory research in computational biology and analyzed genomic data.\n\nPresident\nLed a student organization and organized community workshops.`);
+  assert.ok(evidence.some((item) => item.category === "Research experience"));
+  assert.ok(evidence.some((item) => item.category === "Leadership"));
+});
