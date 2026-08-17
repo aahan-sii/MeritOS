@@ -21,6 +21,8 @@ test("creates a deployable Next.js application build", () => {
 test("keeps MeritOS safeguards and Vercel storage configuration", () => {
   const healthRoute = readFileSync(resolve("app/api/health/route.ts"), "utf8");
   const storage = readFileSync(resolve("app/api/_lib/storage.ts"), "utf8");
+  const documentFacts = readFileSync(resolve("lib/document-facts.ts"), "utf8");
+  const documentsRoute = readFileSync(resolve("app/api/documents/route.ts"), "utf8");
   const auth = readFileSync(resolve("app/chatgpt-auth.ts"), "utf8");
   const commandCenter = readFileSync(resolve("app/page.tsx"), "utf8");
   const preflight = readFileSync(resolve("lib/opportunity-intelligence.ts"), "utf8");
@@ -33,6 +35,9 @@ test("keeps MeritOS safeguards and Vercel storage configuration", () => {
   assert.match(healthRoute, /unsupportedClaims: "blocked"/);
   assert.match(storage, /@vercel\/blob/);
   assert.match(storage, /access: "private"/);
+  assert.match(documentFacts, /AI fact extraction was unavailable/);
+  assert.match(documentsRoute, /export const runtime = "nodejs"/);
+  assert.match(documentsRoute, /export const maxDuration = 60/);
   assert.match(auth, /MERITOS_DEMO_EMAIL/);
   assert.match(commandCenter, /It never silently presses Submit/);
   assert.match(preflight, /Do not claim the applicant is eligible overall/);

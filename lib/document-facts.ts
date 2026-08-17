@@ -114,10 +114,12 @@ export async function extractDocumentFacts(text: string, filename: string): Prom
   }
 
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const response = await client.responses.create({
-    model: process.env.OPENAI_EXTRACTION_FINE_TUNED_MODEL || process.env.OPENAI_EXTRACTION_MODEL || process.env.OPENAI_MODEL || "gpt-5.6-sol",
-    reasoning: { effort: "low" },
-    input: [
+  let response: { output_text: string };
+  try {
+    response = await client.responses.create({
+      model: process.env.OPENAI_EXTRACTION_FINE_TUNED_MODEL || process.env.OPENAI_EXTRACTION_MODEL || process.env.OPENAI_MODEL || "gpt-5.6-sol",
+      reasoning: { effort: "low" },
+      input: [
       {
         role: "developer",
         content: [
@@ -140,8 +142,8 @@ export async function extractDocumentFacts(text: string, filename: string): Prom
           documentText: sourceText,
         }),
       },
-    ],
-    text: {
+      ],
+      text: {
       format: {
         type: "json_schema",
         name: "meritos_document_facts",
@@ -168,8 +170,16 @@ export async function extractDocumentFacts(text: string, filename: string): Prom
           },
         },
       },
-    },
-  });
+      },
+    });
+  } catch (error) {
+    console.error("MeritOS document fact extraction unavailable; using fallback parser", error);
+    return {
+      facts: fallbackFacts(sourceText),
+      mode: "fallback",
+      warning: "AI fact extraction was unavailable, so MeritOS uploaded the document using its local parser. You can still verify the extracted facts.",
+    };
+  }
   let payload: { facts?: unknown };
   try {
     payload = JSON.parse(response.output_text);

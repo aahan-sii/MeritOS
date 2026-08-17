@@ -9,6 +9,9 @@ import { storePrivateDocument } from "../_lib/storage";
 import { ApiError, id, jsonError, requireApiUser } from "../_lib/request";
 import { extractDocumentFacts } from "@/lib/document-facts";
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 const MAX_DOCUMENT_BYTES = 12 * 1024 * 1024;
 const acceptedExtensions = new Set(["pdf", "docx", "txt"]);
 
