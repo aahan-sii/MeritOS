@@ -30,3 +30,10 @@ test("fallback extraction keeps resume basics and grouped non-research experienc
   assert.ok(facts.some((fact) => fact.category === "Education" && /North Valley/.test(fact.statement)));
   assert.ok(facts.some((fact) => fact.category === "Project or impact" && /Cedar Learning/.test(fact.statement)));
 });
+
+test("fallback extraction preserves research and leadership sections", async () => {
+  const { fallbackFacts } = await import("../lib/document-facts.ts");
+  const facts = fallbackFacts(`Jordan Lee\njordan@example.com\n\nRESEARCH EXPERIENCE\nResearch Intern | Built a computational biology pipeline for genomic analysis.\n\nLEADERSHIP\nPresident of the student science club; organized peer mentoring and community workshops.`);
+  assert.ok(facts.some((fact) => fact.category === "Research experience"));
+  assert.ok(facts.some((fact) => fact.category === "Leadership"));
+});

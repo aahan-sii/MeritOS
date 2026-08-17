@@ -73,7 +73,6 @@ export function fallbackFacts(text: string): DocumentFact[] {
   const critical = extractCriticalResumeFacts(text) as DocumentFact[];
   const raw = extractResumeEvidence(text);
   const experienceFacts = raw
-    .slice(0, 22)
     .map(({ category, statement }) => ({
       category: FACT_CATEGORIES.includes(category as DocumentFact["category"])
         ? category as DocumentFact["category"]
@@ -81,14 +80,36 @@ export function fallbackFacts(text: string): DocumentFact[] {
       statement: statement.slice(0, 650),
       sourceQuote: statement.slice(0, 650),
     }))
-    .filter((item) => item.statement.length >= 18);
-  return mergeFacts(critical, experienceFacts, text);
+    .filter((item) => item.statement.length >= 18)
+    .sort((a, b) => factPriority(a.category) - factPriority(b.category))
+    .slice(0, 32);
+  const core = critical.filter((fact) => ["Identity", "Contact details", "Links & profiles"].includes(fact.category));
+  const remainingCritical = critical.filter((fact) => !core.includes(fact));
+  return mergeFacts(core, [...experienceFacts, ...remainingCritical], text);
+}
+
+function factPriority(category: DocumentFact["category"]) {
+  return {
+    Identity: 0,
+    "Contact details": 1,
+    "Links & profiles": 2,
+    "Research experience": 3,
+    Leadership: 4,
+    "Project or impact": 5,
+    "Community contribution": 6,
+    "Award or distinction": 7,
+    "Professional experience": 8,
+    "Entrepreneurial or nonprofit work": 9,
+    "Skills or certification": 10,
+    Education: 11,
+    "Other resume evidence": 12,
+  }[category] ?? 99;
 }
 
 function mergeFacts(primary: DocumentFact[], secondary: DocumentFact[], sourceText: string) {
   const source = normalized(sourceText);
   const merged: DocumentFact[] = [];
-  for (const fact of [...primary, ...secondary]) {
+  for (const fact of [...primary, ...secondary].sort((a, b) => factPriority(a.category) - factPriority(b.category))) {
     if (!FACT_CATEGORIES.includes(fact.category)) continue;
     const statement = clean(fact.statement, 650);
     const sourceQuote = clean(fact.sourceQuote, 700);
@@ -194,5 +215,8 @@ export async function extractDocumentFacts(text: string, filename: string): Prom
       warning: "MeritOS could not verify structured facts from this document, so it used a limited fallback parser.",
     };
   }
-  return { facts: mergeFacts(criticalFacts, facts, sourceText), mode: "ai" };
+  // Keep deterministic, source-backed evidence alongside the model response.
+  // This prevents a good research/leadership section from disappearing when a
+  // model response is valid JSON but simply under-selects one category.
+  return { facts: mergeFacts(criticalFacts, [...facts, ...fallbackFacts(sourceText)], sourceText), mode: "ai" };
 }
