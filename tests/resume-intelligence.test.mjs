@@ -70,3 +70,9 @@ test("recovers narrative categories when a PDF keeps education active across col
   assert.ok(evidence.some((item) => item.category === "Research experience"));
   assert.ok(evidence.some((item) => item.category === "Leadership"));
 });
+
+test("reconstructs sections from flattened PDF text", () => {
+  const evidence = extractResumeEvidence("Jordan Lee EDUCATION North Valley High School RESEARCH EXPERIENCE Research Intern Conducted laboratory research in computational biology and analyzed genomic data. LEADERSHIP President Led a student organization and organized community workshops.");
+  assert.ok(evidence.some((item) => item.category === "Research experience"));
+  assert.ok(evidence.some((item) => item.category === "Leadership"));
+});

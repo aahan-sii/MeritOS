@@ -16,6 +16,8 @@ export const FACT_CATEGORIES = [
   "Other resume evidence",
 ] as const;
 
+const STRONG_RESEARCH_MARKER = /\b(research|laboratory|genomics|bioinformatics|methylation|disease\s+modeling|clinical\s+study|experiment(?:al)?)\b/i;
+
 export type DocumentFact = {
   category: (typeof FACT_CATEGORIES)[number];
   statement: string;
@@ -83,9 +85,12 @@ export function fallbackFacts(text: string): DocumentFact[] {
     .filter((item) => item.statement.length >= 18)
     .sort((a, b) => factPriority(a.category) - factPriority(b.category))
     .slice(0, 32);
+  const researchFacts = experienceFacts
+    .filter((fact) => STRONG_RESEARCH_MARKER.test(fact.statement))
+    .map((fact) => ({ ...fact, category: "Research experience" as const }));
   const core = critical.filter((fact) => ["Identity", "Contact details", "Links & profiles"].includes(fact.category));
   const remainingCritical = critical.filter((fact) => !core.includes(fact));
-  return mergeFacts(core, [...experienceFacts, ...remainingCritical], text);
+  return mergeFacts(core, [...experienceFacts, ...researchFacts, ...remainingCritical], text);
 }
 
 function factPriority(category: DocumentFact["category"]) {
