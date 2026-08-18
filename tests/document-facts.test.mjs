@@ -37,3 +37,17 @@ test("fallback extraction preserves research and leadership sections", async () 
   assert.ok(facts.some((fact) => fact.category === "Research experience"));
   assert.ok(facts.some((fact) => fact.category === "Leadership"));
 });
+
+test("fallback facts survive PDF bullet and line-wrap artifacts", async () => {
+  const { fallbackFacts } = await import("../lib/document-facts.ts");
+  const facts = fallbackFacts(`RESEARCH EXPERIENCE
+Research Intern | Genomics Lab
+● Developed a methylation workflow across disease cohorts.
+● Achieved Gate-A AUC 0.813 after grouped validation.
+LEADERSHIP
+President | Student Health Network
+● Scaled funding to $400,000 and distributed 3,000 opportunities.`);
+  assert.ok(facts.some((fact) => fact.category === "Research experience" && /methylation workflow/i.test(fact.statement)));
+  assert.ok(facts.some((fact) => fact.category === "Research experience" && /Gate-A AUC 0.813/i.test(fact.statement)));
+  assert.ok(facts.some((fact) => fact.category === "Leadership" && /400,000/.test(fact.statement)));
+});

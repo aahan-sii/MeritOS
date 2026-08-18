@@ -39,7 +39,16 @@ function clean(value: unknown, maxLength: number) {
 }
 
 function normalized(value: string) {
-  return value.toLowerCase().replace(/\s+/g, " ").trim();
+  // PDF extractors commonly insert bullet glyphs and zero-width formatting
+  // characters between otherwise contiguous résumé text. Treat those as
+  // whitespace when validating parser-derived evidence; this does not weaken
+  // the source requirement, it only restores the original reading order.
+  return value
+    .toLowerCase()
+    .replace(/[•●▪◦◉]/g, " ")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function overlap(left: string, right: string) {
