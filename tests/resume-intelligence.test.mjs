@@ -86,3 +86,25 @@ test("uses section context over misleading school and award keywords", () => {
   assert.match(research?.statement || "", /methylation analysis workflow/);
   assert.match(leadership?.statement || "", /400,000/);
 });
+
+test("keeps research methods, results, and leadership impact through broken PDF line wraps", () => {
+  const evidence = extractResumeEvidence(`RESEARCH EXPERIENCE
+Research Intern | Genomics Lab
+Developed ancestry inference pipelines across large-scale genomic datasets.
+Independent Research
+Auto-Methyl Project
+Built a multi-stage methylation workflow using Gate
+A and disease-specific classifiers. Achieved Gate-A AUC 0.813.
+Pneumonia Methylation Project
+Improved classification performance from AUC 0.53 to 0.83.
+LEADERSHIP
+President | Student Health Network
+Scaled funding to $400,000, distributed 3,000 opportunities, and onboarded 400 interns.`);
+  const research = evidence.filter((item) => item.category === "Research experience").map((item) => item.statement).join(" ");
+  const leadership = evidence.find((item) => item.category === "Leadership")?.statement || "";
+  assert.match(research, /ancestry inference pipelines/);
+  assert.match(research, /Gate-A AUC 0.813/);
+  assert.match(research, /Pneumonia Methylation Project/);
+  assert.match(leadership, /400,000/);
+  assert.match(leadership, /3,000 opportunities/);
+});
