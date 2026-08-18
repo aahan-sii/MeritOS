@@ -76,3 +76,13 @@ test("reconstructs sections from flattened PDF text", () => {
   assert.ok(evidence.some((item) => item.category === "Research experience"));
   assert.ok(evidence.some((item) => item.category === "Leadership"));
 });
+
+test("uses section context over misleading school and award keywords", () => {
+  const evidence = extractResumeEvidence(`AMERICAN LEADERSHIP ACADEMY\nAWARDS & HONORS\nHigh School Innovation Award, 2026\nRESEARCH EXPERIENCE\nIndependent research project: built a methylation analysis workflow and validated results across two cohorts.\nLEADERSHIP\nPresident, FuturePhysicians.org: scaled funding to $400,000 and coordinated 3,000 shadowing opportunities.`);
+  assert.ok(evidence.some((item) => item.category === "Education" && /Leadership Academy/i.test(item.statement)));
+  assert.ok(evidence.some((item) => item.category === "Award or distinction" && /Innovation Award/.test(item.statement)));
+  const research = evidence.find((item) => item.category === "Research experience");
+  const leadership = evidence.find((item) => item.category === "Leadership");
+  assert.match(research?.statement || "", /methylation analysis workflow/);
+  assert.match(leadership?.statement || "", /400,000/);
+});
