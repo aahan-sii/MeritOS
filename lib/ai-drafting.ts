@@ -50,7 +50,9 @@ function evidenceOnlyFallback(field: DraftField, evidence: DraftEvidence[]): Dra
     return needsInput("MeritOS could not safely choose an option while AI drafting is unavailable. Review the matching evidence instead.");
   }
   const limit = normalizedMaxLength(field);
-  const supporting = dedupeEvidence(evidence, 2);
+  // A project/fit prompt needs one coherent experience. Combining two projects
+  // creates a résumé dump and hides the applicant's strongest story.
+  const supporting = dedupeEvidence(evidence, 1);
   const draft = dedupeDraftText(supporting.map((item) => item.statement).join(" "), limit);
   return draft
     ? { status: "draft", draft, alternatives: [], usedEvidenceIds: supporting.map((item) => item.id), questions: [], confidence: "low", assumptions: ["AI drafting was unavailable; this is a direct evidence-only fallback that needs review."] }

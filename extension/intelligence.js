@@ -53,6 +53,7 @@
     if (/\b(top \d+ extracurricular|extracurriculars?|activities outside)\b/.test(value)) return "extracurriculars";
     if (/\b(skills? or experiences?|what (?:technical )?skills?|technical (?:skill|skills|tools?|stack)|skills? .*help you|strengths? .*bring)\b/.test(value)) return "skills";
     if (/\b(relevant experience|experience .*this role|experience .*position)\b/.test(value)) return "experience";
+    if (/\b(areas? of experience|areas? of expertise|experience areas?)\b/.test(value)) return "experience";
     if (/\b(writing in response to prompts|essay writing experience|experience in writing)\b/.test(value)) return "writing_experience";
     if (/\b(school|institution|university|college|organization|organisation|employer)\b/.test(value)) return "institution";
     if (/\b(why.*apply|why.*fellowship|why.*(?:want|join|interested)|motivation|motivated|interest in this|personal statement|statement of purpose)\b/.test(value)) return "motivation";
