@@ -32,6 +32,7 @@ test("prefers verified resume identity and contact details when available", () =
   assert.equal(intelligence.suggest(field("Full name", "text"), resumeClaims, identity).text, "Maya Patel");
   assert.equal(intelligence.suggest(field("Applicant email address", "email"), resumeClaims, identity).text, "maya.patel@example.test");
   assert.equal(intelligence.suggest(field("Phone number", "tel"), resumeClaims, identity).text, "+1 (480) 555-0188");
+  assert.equal(intelligence.suggest(field("Phone number", "tel"), [...claims, { category: "Contact details", statement: "Phone: 4808594420" }], identity).text, "4808594420");
 });
 
 test("never substitutes applicant contact details for another person", () => {
@@ -76,6 +77,12 @@ test("maps project, community, and awards to their matching facts", () => {
   assert.match(intelligence.suggest(field("Describe a project and the impact it created."), claims, identity).text, /Built leakage-safe/);
   assert.match(intelligence.suggest(field("How have you contributed to your community?"), claims, identity).text, /coding mentor/);
   assert.match(intelligence.suggest(field("List an award, achievement, or distinction."), claims, identity).text, /NCWIT/);
+});
+
+test("uses research evidence when an application calls it a project or technical skill", () => {
+  const researchOnly = [{ category: "Research experience", statement: "Built reproducible DNA methylation pipelines with Python, Bash, and HPC workflows." }];
+  assert.match(intelligence.suggest(field("Describe a project that demonstrates your fit."), researchOnly, identity).text, /methylation pipelines/);
+  assert.match(intelligence.suggest(field("What technical skill would you bring to this team?", "text"), researchOnly, identity).text, /Python/);
 });
 
 test("supports entrepreneurship, nonprofit, employment, teaching, and creative prompts", () => {

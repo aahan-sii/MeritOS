@@ -2,6 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { createGroundedDraftBatch, type DraftField } from "@/lib/ai-drafting";
 import { claims, opportunities, profiles } from "@/db/schema";
+import { buildHumanProfile } from "@/lib/human-profile";
 import { extensionCorsHeaders, requireExtensionConnection } from "../_lib";
 
 export const runtime = "nodejs";
@@ -63,6 +64,7 @@ export async function POST(request: NextRequest) {
     const rows = accountProfile?.headline?.trim()
       ? [{ id: "profile_direction", category: "Motivation & goals", statement: accountProfile.headline.trim() }, ...claimRows]
       : claimRows;
+    const humanProfile = buildHumanProfile(rows);
     const pageUrl = typeof page.url === "string" ? page.url : "";
     const pageHost = (() => { try { return new URL(pageUrl).hostname.replace(/^www\./, ""); } catch { return ""; } })();
     const activeOpportunity = opportunityRows.find((item) => {
@@ -79,7 +81,7 @@ export async function POST(request: NextRequest) {
       page: {
         title: typeof page.title === "string" ? page.title.slice(0, 300) : "",
         url: typeof page.url === "string" ? page.url.slice(0, 1_000) : "",
-        opportunityContext,
+        opportunityContext: [opportunityContext, `HUMAN PROFILE (directional only; not evidence): ${humanProfile.summary}. Relevant directions: ${humanProfile.applicationDirections.join("; ")}.`].filter(Boolean).join("\n"),
       },
       evidence: rows,
       proactive,

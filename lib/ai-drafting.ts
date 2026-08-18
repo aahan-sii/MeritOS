@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { canDraftField, cleanDraftingText, dedupeDraftText, needsPersonalInput, normalizedMaxLength, selectRelevantEvidence } from "./ai-drafting-core";
+import { canDraftField, cleanDraftingText, dedupeDraftText, dedupeEvidence, needsPersonalInput, normalizedMaxLength, selectRelevantEvidence } from "./ai-drafting-core";
 
 export { buildDraftingPrompt, canDraftField, dedupeDraftText, dedupeEvidence, needsPersonalInput, normalizedMaxLength, selectRelevantEvidence, textSimilarity } from "./ai-drafting-core";
 
@@ -44,6 +44,19 @@ function needsInput(question: string): DraftResult {
   return { status: "needs_input", draft: "", usedEvidenceIds: [], questions: [question], confidence: "low", assumptions: [] };
 }
 
+function evidenceOnlyFallback(field: DraftField, evidence: DraftEvidence[]): DraftResult {
+  const control = String(field.control || field.kind || "").toLowerCase();
+  if (["radio", "select", "checkbox"].includes(control)) {
+    return needsInput("MeritOS could not safely choose an option while AI drafting is unavailable. Review the matching evidence instead.");
+  }
+  const limit = normalizedMaxLength(field);
+  const supporting = dedupeEvidence(evidence, 2);
+  const draft = dedupeDraftText(supporting.map((item) => item.statement).join(" "), limit);
+  return draft
+    ? { status: "draft", draft, alternatives: [], usedEvidenceIds: supporting.map((item) => item.id), questions: [], confidence: "low", assumptions: ["AI drafting was unavailable; this is a direct evidence-only fallback that needs review."] }
+    : needsInput("No supported evidence was available for this field.");
+}
+
 export async function createGroundedDraft(request: DraftRequest): Promise<DraftResult> {
   const results = await createGroundedDraftBatch({ fields: [request.field], page: request.page, evidence: request.evidence });
   return results[0] || needsInput("MeritOS could not analyze this field safely.");
@@ -68,7 +81,9 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const evidenceCatalog = new Map<string, DraftEvidence>();
   eligible.forEach((item) => item.evidence.forEach((evidence) => evidenceCatalog.set(evidence.id, evidence)));
-  const response = await client.responses.create({
+  let response: Awaited<ReturnType<typeof client.responses.create>>;
+  try {
+    response = await client.responses.create({
     model: process.env.OPENAI_DRAFT_MODEL || process.env.OPENAI_MODEL || "gpt-5.6-sol",
     reasoning: { effort: "low" },
     input: [
@@ -146,7 +161,10 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
         },
       },
     },
-  });
+    });
+  } catch {
+    return prepared.map((item) => item.immediate || evidenceOnlyFallback(item.field, item.evidence || []));
+  }
   let payload: { items?: Array<{ fieldId?: string; status?: string; draft?: string; alternatives?: unknown; usedEvidenceIds?: unknown; questions?: unknown; confidence?: unknown; assumptions?: unknown }> };
   try { payload = JSON.parse(response.output_text); } catch { throw new Error("The drafting service returned an invalid response."); }
   const byId = new Map((payload.items || []).map((item) => [String(item.fieldId), item]));

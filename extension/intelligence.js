@@ -51,7 +51,7 @@
     if (/\b(ideas?.*(?:grow\w*|promot\w*|fundrais\w*)|grow.*how.*execute|bring to .* department)\b/.test(value)) return "growth_ideas";
     if (/\b(what (?:will|would|can) you bring|contribute to (?:this|the)|value.*bring)\b/.test(value)) return "contribution";
     if (/\b(top \d+ extracurricular|extracurriculars?|activities outside)\b/.test(value)) return "extracurriculars";
-    if (/\b(skills? or experiences?|what skills?|skills? .*help you|strengths? .*bring)\b/.test(value)) return "skills";
+    if (/\b(skills? or experiences?|what (?:technical )?skills?|technical (?:skill|skills|tools?|stack)|skills? .*help you|strengths? .*bring)\b/.test(value)) return "skills";
     if (/\b(relevant experience|experience .*this role|experience .*position)\b/.test(value)) return "experience";
     if (/\b(writing in response to prompts|essay writing experience|experience in writing)\b/.test(value)) return "writing_experience";
     if (/\b(school|institution|university|college|organization|organisation|employer)\b/.test(value)) return "institution";
@@ -113,6 +113,7 @@
   function selectEvidence(intent, claims) {
     const compatibility = {
       nonprofit: ["community"], work: ["teaching"], creative: ["project"],
+      project: ["research", "skills", "work"],
       skills: ["research", "project", "work", "creative", "teaching"],
       experience: ["research", "leadership", "project", "community", "entrepreneurship", "nonprofit", "work", "creative", "teaching", "skills"],
       extracurriculars: ["leadership", "community", "research", "project", "award", "teaching", "creative", "entrepreneurship", "nonprofit"],
@@ -150,7 +151,7 @@
   function extractPhone(claims) {
     for (const claim of claims) {
       if (!/contact|phone|mobile|telephone/i.test(`${claim.category} ${claim.statement}`)) continue;
-      const match = String(claim.statement || "").match(/(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}/);
+      const match = String(claim.statement || "").match(/(?:\+?1[\s.-]?)?\(?\d{3}\)?(?:[\s.-]?\d{3})[\s.-]?\d{4}/);
       if (match) return match[0];
     }
     return "";

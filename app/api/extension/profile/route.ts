@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, inArray, or } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { claims, opportunities, profiles } from "@/db/schema";
+import { buildHumanProfile } from "@/lib/human-profile";
 import { extensionCorsHeaders, requireExtensionConnection } from "../_lib";
 
 export function OPTIONS() {
@@ -76,6 +77,7 @@ export async function GET(request: NextRequest) {
         })),
         coverage,
         activeOpportunity: activeOpportunity || null,
+        humanProfile: buildHumanProfile(rows),
       },
     },
     { headers: extensionCorsHeaders },
