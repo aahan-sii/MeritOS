@@ -70,18 +70,19 @@ test("keeps the signed-in workspace usable on iPhone-sized screens", () => {
   assert.match(manifest, /display: "standalone"/);
 });
 
-test("ships the focused accuracy-validation workflow", () => {
+test("ships the focused FuturePhysicians grant-and-award workflow", () => {
   const workspace = readFileSync(resolve("app/page.tsx"), "utf8");
   const testLab = readFileSync(resolve("app/test-form/TestFormLab.tsx"), "utf8");
   const sidepanel = readFileSync(resolve("extension/sidepanel.html"), "utf8");
   const navigationBlock = workspace.match(/const navigation:[\s\S]*?\n\];/)?.[0] || "";
 
-  assert.match(navigationBlock, /Build profile/);
-  assert.match(navigationBlock, /Verify facts/);
-  assert.match(navigationBlock, /Test autofill/);
+  assert.match(navigationBlock, /Member résumé/);
+  assert.match(navigationBlock, /Verify member facts/);
+  assert.match(navigationBlock, /Grant autofill/);
   assert.doesNotMatch(navigationBlock, /Autopilot|Target analysis|Story bank|Interview practice/);
-  assert.match(workspace, /Three tests decide whether it is useful/);
-  assert.match(workspace, /one confident false answer matters more than ten correct easy fields/i);
+  assert.match(workspace, /Two-source truth system/);
+  assert.match(workspace, /Approved answer presets/);
+  assert.match(workspace, /FuturePhysicians knowledge/);
   assert.match(testLab, /Accuracy checkpoint/);
   assert.match(testLab, /Boundary failure/);
   assert.match(testLab, /Check this form/);

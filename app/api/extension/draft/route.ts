@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createGroundedDraftBatch, type DraftField } from "@/lib/ai-drafting";
 import { claims, opportunities, profiles } from "@/db/schema";
 import { buildHumanProfile } from "@/lib/human-profile";
+import { futurePhysiciansEvidence, futurePhysiciansKnowledge } from "@/lib/future-physicians";
 import { extensionCorsHeaders, requireExtensionConnection } from "../_lib";
 
 export const runtime = "nodejs";
@@ -84,6 +85,8 @@ export async function POST(request: NextRequest) {
         opportunityContext: [opportunityContext, `HUMAN PROFILE (directional only; not evidence): ${humanProfile.summary}. Relevant directions: ${humanProfile.applicationDirections.join("; ")}.`].filter(Boolean).join("\n"),
       },
       evidence: rows,
+      organizationEvidence: futurePhysiciansEvidence,
+      organizationName: futurePhysiciansKnowledge.organizationName,
       proactive,
       highInitiative,
     });

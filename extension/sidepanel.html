@@ -2,19 +2,19 @@
 <html lang="en">
   <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MeritOS</title><link rel="stylesheet" href="sidepanel.css"><style>.field.inference .intent,.field.evidence_preview .intent,.field.ai_inference .intent{background:#fff2c9;color:#745716}.field.inference,.field.ai_inference{border-color:#dcc477}.field.evidence_preview .suggestion,.field.ai_inference .suggestion{background:#fff9ea}.opportunity-context{margin:0 0 11px;padding:10px 12px;border:1px solid #b9d4c7;border-radius:11px;display:grid;gap:2px;background:linear-gradient(135deg,#e4f1ea,#f8fbf8)}.opportunity-context[hidden]{display:none}.opportunity-context small{color:#668078;font-size:8px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.opportunity-context strong{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.opportunity-context span{color:#71857d;font-size:9px}.proactive-switch{margin:11px 0;padding:10px 12px;border:1px solid #d9c584;border-radius:12px;display:flex;align-items:flex-start;gap:9px;background:#fff9e8;cursor:pointer}.proactive-switch input{width:16px;height:16px;margin-top:2px;accent-color:#103f34}.proactive-switch span{display:grid;gap:2px}.proactive-switch strong{font-size:11px}.proactive-switch small{color:#7c7157;font-size:9px;line-height:1.35}</style></head>
   <body>
-    <header class="app-header"><div class="brand"><img class="mark" src="meritos-mark-v2.png" alt=""><span><strong>MeritOS</strong><small>Evidence-backed autofill</small></span></div><button id="settingsButton" class="icon-button" title="Connection settings" aria-label="Connection settings">Settings</button></header>
+    <header class="app-header"><div class="brand"><img class="mark" src="meritos-mark-v2.png" alt=""><span><strong>MeritOS</strong><small>FuturePhysicians grants + awards</small></span></div><button id="settingsButton" class="icon-button" title="Connection settings" aria-label="Connection settings">Settings</button></header>
     <main>
       <section id="connection" class="setup-card">
-        <span class="eyebrow">One-time setup</span><h1>Connect your verified profile</h1><p>Paste the connection key once. MeritOS keeps it across tabs and browser restarts until you revoke it.</p>
+        <span class="eyebrow">One-time setup</span><h1>Connect your member résumé</h1><p>Paste the connection key once. Your verified member facts and FuturePhysicians knowledge stay connected across grant and award forms.</p>
         <label>MeritOS website<input id="baseUrl" value="https://merit-os-jflo.vercel.app" inputmode="url"></label>
         <label>Connection key<input id="token" type="password" placeholder="merit_…"></label>
-        <button id="connectButton" class="primary wide">Connect profile</button><p id="connectStatus" class="status" aria-live="polite"></p>
+        <button id="connectButton" class="primary wide">Connect FuturePhysicians workspace</button><p id="connectStatus" class="status" aria-live="polite"></p>
       </section>
       <section id="assistant" hidden>
-        <div class="page-context"><span class="pulse" aria-hidden="true"></span><div><small>Application detected</small><strong id="pageTitle">Application form</strong><span id="scanStatus" class="scan-status" aria-live="polite"></span></div></div>
+        <div class="page-context"><span class="pulse" aria-hidden="true"></span><div><small>Grant or award form detected</small><strong id="pageTitle">Application form</strong><span id="scanStatus" class="scan-status" aria-live="polite"></span></div></div>
         <div id="opportunityContext" class="opportunity-context" hidden><small>Active MeritOS plan</small><strong id="opportunityTitle"></strong><span id="opportunityOrganization"></span></div>
         <section class="application-run" aria-labelledby="run-title" hidden>
-          <div class="run-heading"><div><span class="run-kicker">Application Run</span><strong id="run-title">Open, prepare, and return for review</strong></div><span id="runBadge" class="run-badge">Ready</span></div>
+          <div class="run-heading"><div><span class="run-kicker">Grant & award run</span><strong id="run-title">Open, prepare, and return for review</strong></div><span id="runBadge" class="run-badge">Ready</span></div>
           <p>Describe what you want. MeritOS searches live public listings, ranks them against your verified profile, and prepares the opportunities you select.</p>
           <div class="run-input"><input id="runQuery" type="text" placeholder="High-school computational biology internships for summer 2027"><button id="searchRuns" class="primary">Find</button></div>
           <div id="runResults" class="run-results" hidden></div>

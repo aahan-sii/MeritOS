@@ -3,6 +3,7 @@
 
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
+import { futurePhysiciansTemplates } from "@/lib/future-physicians";
 
 type View = "overview" | "profile" | "review" | "autopilot" | "fit" | "stories" | "interview" | "extension";
 type ClaimStatus = "verified" | "draft" | "inference" | "restricted" | "missing";
@@ -190,14 +191,7 @@ const coverageAreas = [
   { name: "Preferences & availability", pattern: /availability|location preference|work preference|start date|schedule/i },
 ];
 const claimCategories = coverageAreas.map((area) => area.name);
-const onboardingPurposeOptions = [
-  { value: "jobs_internships", label: "Jobs and internships" },
-  { value: "scholarships_fellowships", label: "Scholarships and fellowships" },
-  { value: "college_graduate", label: "College or graduate programs" },
-  { value: "grants_awards", label: "Grants and awards" },
-  { value: "programs_service", label: "Programs, volunteering, or service" },
-  { value: "mixed", label: "A mix of applications" },
-];
+const onboardingPurposeOptions = [{ value: "grants_awards", label: "FuturePhysicians grants and awards" }];
 const onboardingPurposePrompts: Record<string, string> = {
   jobs_internships: "Add recurring availability, preferred locations, remote or in-person preference, role types, and industries.",
   scholarships_fellowships: "Add recurring academic interests, community impact, leadership themes, recommendation constraints, and award goals.",
@@ -208,10 +202,10 @@ const onboardingPurposePrompts: Record<string, string> = {
 };
 
 const navigation: Array<{ id: View; label: string; index: string }> = [
-  { id: "overview", label: "Home", index: "00" },
-  { id: "profile", label: "Build profile", index: "01" },
-  { id: "review", label: "Verify facts", index: "02" },
-  { id: "extension", label: "Test autofill", index: "03" },
+  { id: "overview", label: "Grant workspace", index: "00" },
+  { id: "profile", label: "Member résumé", index: "01" },
+  { id: "review", label: "Verify member facts", index: "02" },
+  { id: "extension", label: "Grant autofill", index: "03" },
 ];
 
 function Logo({ compact = false }: { compact?: boolean }) {
@@ -221,7 +215,7 @@ function Logo({ compact = false }: { compact?: boolean }) {
       {!compact && (
         <span>
           <strong>MeritOS</strong>
-          <small>Application intelligence</small>
+          <small>FuturePhysicians grant workspace</small>
         </span>
       )}
     </div>
@@ -271,7 +265,7 @@ export default function Home() {
   const mobileMenuCloseRef = useRef<HTMLButtonElement>(null);
   const [accountLoading, setAccountLoading] = useState(true);
   const [profile, setProfile] = useState<Profile>({ displayName: "", headline: "", onboardingComplete: false });
-  const [onboardingPurpose, setOnboardingPurpose] = useState("jobs_internships");
+  const [onboardingPurpose, setOnboardingPurpose] = useState("grants_awards");
   const [onboardingLevel, setOnboardingLevel] = useState("");
   const [onboardingLocation, setOnboardingLocation] = useState("");
   const [onboardingRecurringContext, setOnboardingRecurringContext] = useState("");
@@ -317,6 +311,8 @@ export default function Home() {
   const [selectedOpportunityUrls, setSelectedOpportunityUrls] = useState<string[]>([]);
   const [selectedApplicationIds, setSelectedApplicationIds] = useState<string[]>([]);
   const [initiativeMode, setInitiativeMode] = useState<InitiativeMode>("proactive");
+  const [grantAssistantQuestion, setGrantAssistantQuestion] = useState("");
+  const [grantAssistantAnswer, setGrantAssistantAnswer] = useState("");
 
   const verifiedClaims = useMemo(
     () => claims.filter((claim) => claim.status === "verified"),
@@ -1192,7 +1188,26 @@ export default function Home() {
     );
   }
 
-  const pageTitle = navigation.find((item) => item.id === view)?.label || "Home";
+  async function askGrantAssistant() {
+    if (!grantAssistantQuestion.trim()) return;
+    setBusy("grant-assistant");
+    setError("");
+    setGrantAssistantAnswer("");
+    try {
+      const data = await readJson(await fetch("/api/future-physicians/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: grantAssistantQuestion }),
+      })) as { answer?: string; questions?: string[] };
+      setGrantAssistantAnswer(data.answer || data.questions?.[0] || "Add a little more grant-specific detail and try again.");
+    } catch (assistantError) {
+      setError(assistantError instanceof Error ? assistantError.message : "The grant assistant could not answer right now.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  const pageTitle = navigation.find((item) => item.id === view)?.label || "Grant workspace";
   const mobilePrimaryNavigation = navigation.filter((item) => ["overview", "profile", "extension"].includes(item.id));
   const autopilotStages = [
     { label: "Set your goal", complete: Boolean(opportunityQuery.trim() || fit?.target || target) },
@@ -1258,7 +1273,7 @@ export default function Home() {
 
       <section className="mos-workspace">
         <header className="mos-topbar">
-          <div><span className="mos-kicker">Your private application workspace</span><h1>{pageTitle}</h1></div>
+          <div><span className="mos-kicker">FuturePhysicians.org · internal workspace</span><h1>{pageTitle}</h1></div>
           <div className="mos-top-actions">
             <button className="mos-button light" onClick={() => openFactForm()}>Add context</button>
             <button className="mos-button dark" onClick={() => setShowImport(true)}>Upload document</button>
@@ -1271,12 +1286,12 @@ export default function Home() {
           <div className="mos-page mos-overview">
             <section className="mos-hero" data-reveal>
               <div>
-                <span className="mos-pill inverse">Accuracy validation release</span>
-                <h2>Fill repetitive application fields from facts you can inspect.</h2>
-                <p>Upload your résumé, correct the extracted profile, and test MeritOS beside a safe application form. Unsupported, sensitive, and opportunity-specific answers remain visible instead of being invented.</p>
+                <span className="mos-pill inverse">Grants + awards copilot</span>
+                <h2>Clear grant and award applications without rewriting FuturePhysicians from scratch.</h2>
+                <p>Upload your personal résumé once. MeritOS combines your verified member facts with a separate FuturePhysicians knowledge base, prepares grounded answers beside the real form, and keeps unresolved details visible.</p>
                 <div className="mos-action-row">
-                  <button className="mos-button pale" onClick={() => goTo(verifiedClaims.length ? "extension" : "profile")}>{verifiedClaims.length ? "Test my profile" : "Build my profile"}</button>
-                  <button className="mos-button text-inverse" onClick={() => goTo("review")}>Review extracted facts →</button>
+                  <button className="mos-button pale" onClick={() => goTo(verifiedClaims.length ? "extension" : "profile")}>{verifiedClaims.length ? "Open grant autofill" : "Upload my résumé"}</button>
+                  <button className="mos-button text-inverse" onClick={() => goTo("review")}>Verify member facts →</button>
                 </div>
               </div>
               <ReadinessVisual value={readinessValue} label="profile coverage" />
@@ -1286,7 +1301,7 @@ export default function Home() {
               <article><small>Verified facts</small><strong>{verifiedClaims.length}</strong><span>safe for supported answers</span></article>
               <article><small>Needs your review</small><strong>{reviewClaims.length}</strong><span>excluded from autofill</span></article>
               <article><small>Context coverage</small><strong>{coveredAreas.length}/{coverageAreas.length}</strong><span>areas represented</span></article>
-              <article><small>Chrome connection</small><strong>{extensionToken ? "Ready" : "Off"}</strong><span>{extensionToken ? "profile connected" : "connect before testing"}</span></article>
+              <article><small>FuturePhysicians knowledge</small><strong>Built in</strong><span>organization answers kept separate</span></article>
             </section>
 
             <section className="mos-grid two-one">
@@ -1310,10 +1325,43 @@ export default function Home() {
               </article>
             </section>
 
+            <section className="mos-card" data-reveal>
+              <div className="mos-card-head"><div><span className="mos-kicker">Two-source truth system</span><h3>The right source answers the right question.</h3></div></div>
+              <div className="mos-review-grid">
+                <article><span className="mos-kicker">Member résumé</span><h3>You and your contribution</h3><p>Name, contact details, background, role, and your documented work for FuturePhysicians come only from your verified profile.</p></article>
+                <article><span className="mos-kicker">Organization knowledge</span><h3>FuturePhysicians itself</h3><p>Mission, programs, organizational accomplishments, and approved funding uses come from the shared FuturePhysicians source—not a member résumé.</p></article>
+                <article><span className="mos-kicker">Application details</span><h3>Never silently guessed</h3><p>Location, amount, dates, audience, and measurable outcomes stay as visible placeholders until the reviewer completes them.</p></article>
+              </div>
+            </section>
+
+            <section className="mos-card" data-reveal>
+              <div className="mos-card-head"><div><span className="mos-kicker">Approved answer presets</span><h3>Start from a structure, then fill the highlighted details.</h3></div></div>
+              <div className="mos-coverage-grid">
+                {futurePhysiciansTemplates.map((preset) => <article key={preset.id}><span>FP</span><strong>{preset.title}</strong><small>{preset.purpose}</small><p>{preset.template}</p></article>)}
+              </div>
+            </section>
+
+            <section className="mos-card" data-reveal>
+              <div className="mos-card-head"><div><span className="mos-kicker">Ask MeritOS</span><h3>Get help with a grant or award question.</h3><p>The assistant uses verified member evidence and FuturePhysicians knowledge, labels missing details, and does not invent impact.</p></div></div>
+              <div className="mos-target-form">
+                <textarea value={grantAssistantQuestion} onChange={(event) => setGrantAssistantQuestion(event.target.value)} placeholder="Example: How should we explain what this grant money will fund?" />
+                <button className="mos-button dark" disabled={!grantAssistantQuestion.trim() || busy === "grant-assistant"} onClick={() => void askGrantAssistant()}>{busy === "grant-assistant" ? "Drafting…" : "Draft grounded answer"}</button>
+              </div>
+              {grantAssistantAnswer && <div className="mos-generated-copy"><strong>Suggested answer</strong><p>{grantAssistantAnswer}</p></div>}
+            </section>
+
+            <section className="mos-card" data-reveal>
+              <div className="mos-card-head"><div><span className="mos-kicker">Grant & award tracker</span><h3>{applicationQueue.length ? `${applicationQueue.length} saved application${applicationQueue.length === 1 ? "" : "s"}` : "No applications saved yet"}</h3><p>Keep the opportunity, deadline, preparation gaps, and submission state together.</p></div></div>
+              <div className="mos-ledger">
+                {applicationQueue.slice(0, 8).map((item) => <article key={item.application.id}><span className={item.application.status === "submitted" ? "ready" : ""}>{item.application.status === "submitted" ? "✓" : "→"}</span><div><strong>{item.opportunity.title}</strong><small>{item.opportunity.organization} · {item.application.status} · {item.preparation.missing} items need attention</small></div><a href={item.opportunity.url} target="_blank" rel="noreferrer">Open ↗</a></article>)}
+                {!applicationQueue.length && <div className="mos-empty"><strong>Your tracker is ready.</strong><p>Saved grant and award forms will appear here after they are prepared.</p></div>}
+              </div>
+            </section>
+
             <section className="mos-extension-callout" data-reveal>
               <img src="/meritos-mark-v2.png" alt="" />
-              <div><span className="mos-kicker">One workflow to prove</span><h3>Does your verified profile fill a real form accurately?</h3><p>Use the controlled testing lab first. If an answer is wrong, the test tells us whether extraction, matching, or form filling needs work.</p></div>
-              <button className="mos-button dark" onClick={() => goTo("extension")}>Start accuracy test</button>
+              <div><span className="mos-kicker">Use it on the real application</span><h3>Install the FuturePhysicians grant autofill extension.</h3><p>Open a grant or award form, scan it once, review the prepared answers and visible placeholders, then fill only what you approve.</p></div>
+              <button className="mos-button dark" onClick={() => goTo("extension")}>Get the extension</button>
             </section>
           </div>
         )}

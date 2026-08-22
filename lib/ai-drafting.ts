@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { canDraftField, cleanDraftingText, dedupeDraftText, dedupeEvidence, needsPersonalInput, normalizedMaxLength, selectRelevantEvidence } from "./ai-drafting-core";
+import { isFuturePhysiciansOrganizationQuestion, isMemberContributionQuestion, routeFuturePhysiciansEvidence, selectFuturePhysiciansOrganizationEvidence } from "./future-physicians";
 
 export { buildDraftingPrompt, canDraftField, dedupeDraftText, dedupeEvidence, needsPersonalInput, normalizedMaxLength, selectRelevantEvidence, textSimilarity } from "./ai-drafting-core";
 
@@ -36,6 +37,8 @@ type DraftBatchRequest = {
   fields: DraftField[];
   page?: { title?: string; url?: string; opportunityContext?: string };
   evidence: DraftEvidence[];
+  organizationEvidence?: DraftEvidence[];
+  organizationName?: string;
   proactive?: boolean;
   highInitiative?: boolean;
 };
@@ -69,8 +72,14 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
   const prepared: PreparedField[] = request.fields.map((field): PreparedField => {
     if (needsPersonalInput(field) && !request.proactive) return { field, immediate: needsInput("Why does this specific opportunity matter to you? Add your own reason in MeritOS before drafting this answer.") };
     if (!canDraftField(field, { proactive: request.proactive })) return { field, immediate: needsInput("This field needs application-specific or sensitive information that MeritOS will not guess.") };
-    let evidence = selectRelevantEvidence(field, request.evidence);
-    if (request.proactive && needsPersonalInput(field) && !evidence.length) evidence = request.evidence.slice(0, 12);
+    const routedEvidence = routeFuturePhysiciansEvidence(field, request.evidence, request.organizationEvidence || []);
+    let evidence = isFuturePhysiciansOrganizationQuestion(field)
+      ? dedupeEvidence([
+        ...selectFuturePhysiciansOrganizationEvidence(field, request.organizationEvidence || []),
+        ...routedEvidence.filter((item) => !item.id.startsWith("fp_org_")),
+      ], 14)
+      : selectRelevantEvidence(field, routedEvidence);
+    if (request.proactive && needsPersonalInput(field) && !evidence.length) evidence = routedEvidence.slice(0, 12);
     if (!evidence.length) return { field, immediate: needsInput("No matching verified evidence was found for this question. Add or verify a relevant fact first.") };
     return { field, evidence };
   });
@@ -93,6 +102,13 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
         role: "developer",
         content: [
           "You are MeritOS, an evidence-bound application field analyst.",
+          request.organizationName
+            ? `This workspace belongs to ${request.organizationName}. Evidence IDs beginning with fp_org_ describe the organization, never the individual member.`
+            : "Evidence IDs beginning with fp_org_ describe an organization, never the individual applicant.",
+          "For organization, mission, program, accomplishment, grant-budget, or use-of-funds questions, write as FuturePhysicians.org or first-person plural (we/our). For personal, applicant, contact, or member-contribution questions, write in first-person singular and never use fp_org_ evidence.",
+          "Never attribute an organization-wide accomplishment, reach, program, or impact to the individual member unless separate member evidence explicitly establishes that person's contribution.",
+          "Evidence labeled FuturePhysicians use of funds or FuturePhysicians grant plan describes future proposed activity. Keep it in future tense and never present it as a completed program, secured partnership, or past impact. Award-recognition answers must rely on documented historical impact rather than proposed grant plans.",
+          "Preserve every [[PLACEHOLDER]] token exactly. A placeholder marks unresolved application-specific information and must never be guessed or silently removed.",
           "Analyze every supplied field independently. The evidence catalog is shared across the form; for each field, use only evidence IDs listed in that field's allowedEvidenceIds.",
           "Never transfer identity/contact information into a field about a teacher, recommender, reference, supervisor, parent, guardian, or other third party.",
           "Never invent credentials, grades, dates, metrics, achievements, eligibility, consent, demographics, legal status, or work authorization. Motivation may be inferred only in PROACTIVE MODE from verified applicant direction plus official opportunity context, and must be disclosed as an assumption.",
@@ -131,6 +147,7 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
             maxCharacters: normalizedMaxLength(field),
             options: Array.isArray(field.options) ? field.options.slice(0, 40).map((option) => cleanDraftingText(typeof option === "string" ? option : option.label || option.value, 180)) : [],
             allowedEvidenceIds: evidence.map((item) => item.id),
+            answerScope: isMemberContributionQuestion(field) ? "individual_member" : isFuturePhysiciansOrganizationQuestion(field) ? "futurephysicians_organization" : "individual_member",
           })),
         }),
       },
