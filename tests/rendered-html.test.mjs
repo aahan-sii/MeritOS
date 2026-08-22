@@ -72,15 +72,21 @@ test("keeps the signed-in workspace usable on iPhone-sized screens", () => {
 
 test("ships the focused FuturePhysicians grant-and-award workflow", () => {
   const workspace = readFileSync(resolve("app/page.tsx"), "utf8");
+  const documentRoute = readFileSync(resolve("app/api/documents/route.ts"), "utf8");
   const testLab = readFileSync(resolve("app/test-form/TestFormLab.tsx"), "utf8");
   const sidepanel = readFileSync(resolve("extension/sidepanel.html"), "utf8");
   const navigationBlock = workspace.match(/const navigation:[\s\S]*?\n\];/)?.[0] || "";
 
-  assert.match(navigationBlock, /Member résumé/);
+  assert.match(navigationBlock, /Member details/);
   assert.match(navigationBlock, /Verify member facts/);
   assert.match(navigationBlock, /Grant autofill/);
   assert.doesNotMatch(navigationBlock, /Autopilot|Target analysis|Story bank|Interview practice/);
   assert.match(workspace, /Two-source truth system/);
+  assert.match(workspace, /Two inputs, no résumé/);
+  assert.match(workspace, /FuturePhysicians contribution brief/);
+  assert.match(workspace, /Save member basics/);
+  assert.match(documentRoute, /futurephysicians_contribution/);
+  assert.match(documentRoute, /does not mention FuturePhysicians/);
   assert.match(workspace, /Approved answer presets/);
   assert.match(workspace, /FuturePhysicians knowledge/);
   assert.match(testLab, /Accuracy checkpoint/);

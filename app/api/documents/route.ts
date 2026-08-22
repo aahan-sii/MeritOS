@@ -133,6 +133,7 @@ export async function POST(request: NextRequest) {
     const user = await requireApiUser();
     const formData = await request.formData();
     const file = formData.get("file");
+    const purpose = formData.get("purpose");
     if (!(file instanceof File)) throw new ApiError(400, "Choose a document to upload.");
     if (!acceptedExtensions.has(extension(file.name))) {
       throw new ApiError(400, "Use a PDF, DOCX, or TXT document.");
@@ -148,6 +149,14 @@ export async function POST(request: NextRequest) {
       new File([buffer], file.name, { type: file.type }),
     );
     const extraction = await extractDocumentFacts(extractedText, file.name);
+    const contributionOnly = purpose === "futurephysicians_contribution";
+    // This endpoint treats contribution uploads as a self-contained FP brief.
+    // Reject a misplaced résumé early instead of silently extracting unrelated
+    // schoolwork or activities and later misattributing them to FuturePhysicians.
+    if (contributionOnly && !/\bfuture\s*physicians\b|\bfuturephysicians\b/i.test(extractedText)) {
+      throw new ApiError(400, "This contribution brief does not mention FuturePhysicians. Upload a document about your personal FP role and contribution instead.");
+    }
+    const extractedFacts = extraction.facts;
     const storedFile = await storePrivateDocument(
       storageKey,
       buffer,
@@ -168,7 +177,7 @@ export async function POST(request: NextRequest) {
     const db = await getDb();
     await db.insert(documents).values(document);
     const now = new Date();
-    const candidates = extraction.facts.map(({ statement, category, sourceQuote }) => ({
+    const candidates = extractedFacts.map(({ statement, category, sourceQuote }) => ({
       id: id("claim"),
       userEmail: user.email,
       category,
@@ -189,10 +198,19 @@ export async function POST(request: NextRequest) {
       entityType: "document",
       entityId: documentId,
       action: "uploaded",
-      detail: { filename: file.name, sizeBytes: file.size },
+      detail: { filename: file.name, sizeBytes: file.size, purpose: contributionOnly ? "futurephysicians_contribution" : "general" },
     });
     return NextResponse.json(
-      { document, candidateClaims: candidates, extraction: { mode: extraction.mode, warning: extraction.warning } },
+      {
+        document,
+        candidateClaims: candidates,
+        extraction: {
+          mode: extraction.mode,
+          warning: contributionOnly && candidates.length === 0
+            ? "No contribution facts were found. Use a brief that names FuturePhysicians and explains your personal role, actions, dates, or outcomes."
+            : extraction.warning,
+        },
+      },
       { status: 201 },
     );
   } catch (error) {

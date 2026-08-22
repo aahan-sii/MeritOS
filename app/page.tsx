@@ -179,31 +179,16 @@ const storyFocuses = [
 const storyDepths = ["Compact", "Standard", "Detailed"];
 const coverageAreas = [
   { name: "Contact details", pattern: /contact|phone|mobile|telephone|email/i },
-  { name: "Links & profiles", pattern: /linkedin|github|portfolio|website|https?:\/\//i },
-  { name: "Education", pattern: /education|academic|school|coursework|degree|gpa/i },
-  { name: "Experience", pattern: /experience|employment|intern|work|research/i },
-  { name: "Projects & impact", pattern: /project|impact|portfolio|built|developed/i },
-  { name: "Leadership", pattern: /leadership|led|founded|president|captain|mentor/i },
-  { name: "Awards", pattern: /award|distinction|honou?r|recognition|achievement/i },
-  { name: "Community", pattern: /community|service|volunteer|outreach/i },
-  { name: "Skills", pattern: /skill|technical|language|tool|certif/i },
-  { name: "Motivation & goals", pattern: /motivation|goal|interest|why|aspiration/i },
-  { name: "Preferences & availability", pattern: /availability|location preference|work preference|start date|schedule/i },
+  { name: "Education basics", pattern: /education|academic|school|grade|graduat/i },
+  { name: "FuturePhysicians role", pattern: /future\s*physicians|futurephysicians.*(?:role|president|intern|member|ambassador)|(?:role|president|intern|member|ambassador).*future\s*physicians/i },
+  { name: "Personal contribution", pattern: /future\s*physicians|futurephysicians.*(?:led|created|organized|coordinated|delivered|mentored|built|managed)|(?:led|created|organized|coordinated|delivered|mentored|built|managed).*future\s*physicians/i },
+  { name: "Documented outcomes", pattern: /future\s*physicians|futurephysicians.*(?:\d|student|attendee|partner|chapter|funding|impact|outcome)|(?:\d|student|attendee|partner|chapter|funding|impact|outcome).*future\s*physicians/i },
 ];
 const claimCategories = coverageAreas.map((area) => area.name);
-const onboardingPurposeOptions = [{ value: "grants_awards", label: "FuturePhysicians grants and awards" }];
-const onboardingPurposePrompts: Record<string, string> = {
-  jobs_internships: "Add recurring availability, preferred locations, remote or in-person preference, role types, and industries.",
-  scholarships_fellowships: "Add recurring academic interests, community impact, leadership themes, recommendation constraints, and award goals.",
-  college_graduate: "Add intended field, degree level, graduation timeline, research interests, program preferences, and geographic limits.",
-  grants_awards: "Add project stage, intended impact, collaborators, approximate timing, organization context, and common required documents.",
-  programs_service: "Add causes, availability, travel limits, languages, skills, age-related requirements you know, and preferred commitment level.",
-  mixed: "Add the facts that repeatedly appear on your applications: availability, location preferences, goals, constraints, links, and recurring themes.",
-};
 
 const navigation: Array<{ id: View; label: string; index: string }> = [
   { id: "overview", label: "Grant workspace", index: "00" },
-  { id: "profile", label: "Member résumé", index: "01" },
+  { id: "profile", label: "Member details", index: "01" },
   { id: "review", label: "Verify member facts", index: "02" },
   { id: "extension", label: "Grant autofill", index: "03" },
 ];
@@ -265,10 +250,6 @@ export default function Home() {
   const mobileMenuCloseRef = useRef<HTMLButtonElement>(null);
   const [accountLoading, setAccountLoading] = useState(true);
   const [profile, setProfile] = useState<Profile>({ displayName: "", headline: "", onboardingComplete: false });
-  const [onboardingPurpose, setOnboardingPurpose] = useState("grants_awards");
-  const [onboardingLevel, setOnboardingLevel] = useState("");
-  const [onboardingLocation, setOnboardingLocation] = useState("");
-  const [onboardingRecurringContext, setOnboardingRecurringContext] = useState("");
   const [claims, setClaims] = useState<Claim[]>([]);
   const [fit, setFit] = useState<FitAnalysis | null>(null);
   const [stories, setStories] = useState<Story[]>([]);
@@ -283,6 +264,8 @@ export default function Home() {
   const [importStage, setImportStage] = useState<ImportStage>("idle");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [importMessage, setImportMessage] = useState("");
+  const [importPurpose, setImportPurpose] = useState<"contribution" | "other">("contribution");
+  const [memberBasics, setMemberBasics] = useState({ fullName: "", email: "", phone: "", school: "", grade: "", graduation: "" });
   const [showFactForm, setShowFactForm] = useState(false);
   const [factCategory, setFactCategory] = useState("Motivation & goals");
   const [factStatement, setFactStatement] = useState("");
@@ -343,13 +326,18 @@ export default function Home() {
   const recommendedSources = useMemo(() => {
     const text = claims.map((claim) => `${claim.category} ${claim.statement} ${claim.evidence}`).join(" ");
     return [
-      { name: "Résumé or CV", reason: "Identity, education, roles, projects, skills, and dates", present: /r[eé]sum[eé]|curriculum vitae|imported document/i.test(text), action: "upload" },
-      { name: "LinkedIn export", reason: "Role history, organizations, links, and profile summary", present: /linkedin/i.test(text), action: "context" },
-      { name: "Portfolio or personal site", reason: "Projects, public proof, writing, and technical work", present: /portfolio|personal website|github\.com|website/i.test(text), action: "context" },
-      { name: "Transcript", reason: "Courses, institution, grades, and academic timeline", present: /transcript/i.test(text), action: "upload" },
-      { name: "Prior essays or cover letters", reason: "Motivation, voice, values, and reusable stories", present: /essay|cover letter|personal statement/i.test(text), action: "upload" },
+      { name: "Member basics", reason: "Name, school, grade, graduation date, email, and phone", present: /full name:|email:|school:|current grade:|expected graduation:/i.test(text), action: "basics" },
+      { name: "FuturePhysicians contribution brief", reason: "Only your FP role, actions, dates, and personal outcomes", present: /future\s*physicians|futurephysicians/i.test(text), action: "contribution" },
     ];
   }, [claims]);
+
+  function openContributionImport() {
+    setImportPurpose("contribution");
+    setImportStage("idle");
+    setSelectedFile(null);
+    setImportMessage("");
+    setShowImport(true);
+  }
 
   const filteredClaims = claims.filter((claim) => {
     const statusMatch =
@@ -380,8 +368,18 @@ export default function Home() {
           headline: profileData.profile.headline || "",
           onboardingComplete: profileData.profile.onboardingComplete === true,
         };
+        const loadedClaims = claimsData.claims as Claim[];
+        const basicValue = (prefix: string) => loadedClaims.find((claim) => claim.statement.toLowerCase().startsWith(prefix))?.statement.slice(prefix.length).trim() || "";
         setProfile(nextProfile);
-        setClaims(claimsData.claims);
+        setClaims(loadedClaims);
+        setMemberBasics({
+          fullName: basicValue("full name:") || nextProfile.displayName,
+          email: basicValue("email:"),
+          phone: basicValue("phone:"),
+          school: basicValue("school:"),
+          grade: basicValue("current grade:"),
+          graduation: basicValue("expected graduation:"),
+        });
         setFit(fitData.analysis);
         setStories(storiesData.stories);
         setInterview(interviewData.session);
@@ -471,41 +469,6 @@ export default function Home() {
     return data;
   }
 
-  async function finishOnboarding() {
-    setBusy("onboarding");
-    setError("");
-    try {
-      const purposeLabel = onboardingPurposeOptions.find((option) => option.value === onboardingPurpose)?.label || "Applications";
-      const onboardingFacts = [
-        { category: "Motivation & goals", statement: `Primary MeritOS use: ${purposeLabel}.` },
-        { category: "Education", statement: `Applicant-confirmed current education level: ${onboardingLevel}.` },
-        onboardingLocation.trim() ? { category: "Preferences & availability", statement: `Applicant-confirmed current location: ${onboardingLocation.trim()}.` } : null,
-        onboardingRecurringContext.trim() ? { category: "Preferences & availability", statement: `Applicant-confirmed recurring context for ${purposeLabel}: ${onboardingRecurringContext.trim()}` } : null,
-      ].filter((item): item is { category: string; statement: string } => Boolean(item?.statement));
-      const newFacts = onboardingFacts.filter((item) => !claims.some((claim) => claim.statement.trim().toLowerCase() === item.statement.trim().toLowerCase()));
-      const createdClaims = await Promise.all(newFacts.map(async (item) => {
-        const response = await readJson(await fetch("/api/claims", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...item, status: "verified", confidence: 100, evidence: [{ source: "Applicant-confirmed onboarding context" }], allowedUses: ["application_assistance", "fit_analysis", "interview_practice"] }),
-        }));
-        return response.claim as Claim;
-      }));
-      const data = await readJson(await fetch("/api/profile", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...profile, onboardingComplete: true }),
-      }));
-      if (createdClaims.length) setClaims((current) => [...createdClaims, ...current]);
-      setProfile(data.profile);
-      announce("Your verified profile is ready.");
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Setup could not be saved.");
-    } finally {
-      setBusy("");
-    }
-  }
-
   function chooseFile(file: File | undefined) {
     if (!file) return;
     const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
@@ -535,6 +498,7 @@ export default function Home() {
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
+      formData.append("purpose", importPurpose === "contribution" ? "futurephysicians_contribution" : "general");
       const data = await readJson(await fetch("/api/documents", { method: "POST", body: formData }));
       setClaims((current) => [...data.candidateClaims, ...current]);
       setImportMessage(
@@ -571,6 +535,53 @@ export default function Home() {
       announce(status === "verified" ? "Fact verified and available to MeritOS." : "Fact moved out of automatic use.");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "The fact could not be updated.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function saveMemberBasics() {
+    const fullName = memberBasics.fullName.trim() || profile.displayName.trim();
+    const basicFacts = [
+      fullName ? { category: "Identity", statement: `Full name: ${fullName}` } : null,
+      memberBasics.email.trim() ? { category: "Contact details", statement: `Email: ${memberBasics.email.trim()}` } : null,
+      memberBasics.phone.trim() ? { category: "Contact details", statement: `Phone: ${memberBasics.phone.trim()}` } : null,
+      memberBasics.school.trim() ? { category: "Education", statement: `School: ${memberBasics.school.trim()}` } : null,
+      memberBasics.grade.trim() ? { category: "Education", statement: `Current grade: ${memberBasics.grade.trim()}` } : null,
+      memberBasics.graduation.trim() ? { category: "Education", statement: `Expected graduation: ${memberBasics.graduation.trim()}` } : null,
+    ].filter((item): item is { category: string; statement: string } => Boolean(item));
+    if (!basicFacts.length) {
+      setError("Add at least one basic member detail first.");
+      return;
+    }
+    setBusy("member-basics");
+    try {
+      const existing = new Set(claims.map((claim) => claim.statement.trim().toLowerCase()));
+      const newFacts = basicFacts.filter((item) => !existing.has(item.statement.toLowerCase()));
+      const created = await Promise.all(newFacts.map(async (item) => {
+        const data = await readJson(await fetch("/api/claims", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...item,
+            status: "verified",
+            confidence: 100,
+            evidence: [{ source: "Member-confirmed basic details" }],
+            allowedUses: ["application_assistance"],
+          }),
+        }));
+        return data.claim as Claim;
+      }));
+      const profileData = await readJson(await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...profile, displayName: fullName || profile.displayName, onboardingComplete: true }),
+      }));
+      setClaims((current) => [...created, ...current]);
+      setProfile(profileData.profile);
+      announce(created.length ? "Basic member details saved." : "Those basic details are already saved.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Basic member details could not be saved.");
     } finally {
       setBusy("");
     }
@@ -1071,7 +1082,7 @@ export default function Home() {
             <span className="mos-kicker">One profile. Every application form.</span>
             <h1>Your real experience,<br /><em>ready wherever you apply.</em></h1>
             <p>
-              MeritOS turns your approved résumé facts into accurate suggestions beside legitimate
+              MeritOS combines your approved member basics and FuturePhysicians contribution facts into accurate suggestions beside legitimate
               application forms. You inspect every fact, fix mistakes once, and keep final control.
             </p>
             <div className="mos-action-row">
@@ -1095,7 +1106,7 @@ export default function Home() {
           </div>
         </section>
         <section className="mos-flow" id="how-it-works" aria-label="How MeritOS works">
-          <article><b>01</b><strong>Build your profile</strong><p>Upload documents and add context a résumé cannot capture.</p></article>
+          <article><b>01</b><strong>Add member details</strong><p>Save basic education and contact information once.</p></article>
           <article><b>02</b><strong>Verify every fact</strong><p>Control what is true, sensitive, or safe to reuse.</p></article>
           <article><b>03</b><strong>Open the real form</strong><p>The Chrome side panel detects supported factual questions beside the application.</p></article>
           <article><b>04</b><strong>Approve before filling</strong><p>MeritOS fills what you approve and stops at the irreversible final action.</p></article>
@@ -1128,33 +1139,27 @@ export default function Home() {
         <section className="mos-onboarding-card">
           <div className="mos-onboarding-steps"><span className="active">Account</span><span className="active">Profile</span><span>Workspace</span></div>
           <span className="mos-kicker">One-time setup</span>
-          <h1>Give MeritOS enough context to be useful.</h1>
-          <p>This guided setup disappears when you finish. Your profile remains editable.</p>
+          <h1>Add only the member details MeritOS needs.</h1>
+          <p>Enter basic education and contact information. Your separate FuturePhysicians contribution brief comes next.</p>
           <div className="mos-field-grid">
-            <label>Full name<input value={profile.displayName} onChange={(event) => setProfile({ ...profile, displayName: event.target.value })} placeholder="Your full name" /></label>
-            <label>Current direction<input value={profile.headline} onChange={(event) => setProfile({ ...profile, headline: event.target.value })} placeholder="What are you working toward?" /></label>
+            <label>Full name<input value={memberBasics.fullName || profile.displayName} onChange={(event) => setMemberBasics({ ...memberBasics, fullName: event.target.value })} placeholder="Your full name" /></label>
+            <label>Email<input type="email" value={memberBasics.email} onChange={(event) => setMemberBasics({ ...memberBasics, email: event.target.value })} placeholder="you@example.org" /></label>
+            <label>Phone<input type="tel" value={memberBasics.phone} onChange={(event) => setMemberBasics({ ...memberBasics, phone: event.target.value })} placeholder="Optional" /></label>
+            <label>School<input value={memberBasics.school} onChange={(event) => setMemberBasics({ ...memberBasics, school: event.target.value })} placeholder="Your school" /></label>
+            <label>Current grade<select value={memberBasics.grade} onChange={(event) => setMemberBasics({ ...memberBasics, grade: event.target.value })}><option value="">Choose grade</option><option>9th grade</option><option>10th grade</option><option>11th grade</option><option>12th grade</option><option>College undergraduate</option><option>Graduate / professional school</option></select></label>
+            <label>Expected graduation<input type="date" value={memberBasics.graduation} onChange={(event) => setMemberBasics({ ...memberBasics, graduation: event.target.value })} /></label>
           </div>
-          <section className="mos-onboarding-intake" aria-labelledby="onboarding-intake-title">
-            <div><span className="mos-kicker">Application intent</span><h2 id="onboarding-intake-title">Teach MeritOS what your forms usually ask.</h2><p>These answers become verified reusable context, so the extension asks you fewer questions later.</p></div>
-            <div className="mos-field-grid">
-              <label>What will you use MeritOS for most?<select value={onboardingPurpose} onChange={(event) => setOnboardingPurpose(event.target.value)}>{onboardingPurposeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-              <label>Current stage<select value={onboardingLevel} onChange={(event) => setOnboardingLevel(event.target.value)}><option value="">Choose your current stage</option><option>Middle school</option><option>High school</option><option>College undergraduate</option><option>Graduate or professional school</option><option>Early career</option><option>Experienced professional</option><option>Career change</option><option>Other</option></select></label>
-              <label>Current city and state or region<input value={onboardingLocation} onChange={(event) => setOnboardingLocation(event.target.value)} placeholder="Example: Queen Creek, AZ" /></label>
-              <label>Context that appears repeatedly<textarea value={onboardingRecurringContext} onChange={(event) => setOnboardingRecurringContext(event.target.value)} placeholder={onboardingPurposePrompts[onboardingPurpose]} /></label>
-            </div>
-            <small>{onboardingPurposePrompts[onboardingPurpose]} MeritOS never guesses consent, legal status, sensitive demographics, or exact addresses.</small>
-          </section>
           <div className="mos-setup-row">
-            <span><b>1</b><span><strong>Import your résumé or CV</strong><small>PDF, DOCX, or TXT. AI groups related bullets into usable facts.</small></span></span>
-            <button className="mos-button light" onClick={() => setShowImport(true)}>Choose document</button>
+            <span><b>1</b><span><strong>Save member basics</strong><small>These fields answer basic application questions. No résumé or unrelated activities required.</small></span></span>
+            <span className="mos-pill">Basic profile</span>
           </div>
           <div className="mos-setup-row">
             <span><b>2</b><span><strong>Verify extracted facts</strong><small>{verifiedClaims.length} of {claims.length} currently approved.</small></span></span>
             <span className="mos-pill">{claims.length ? "Review below" : "Waiting for upload"}</span>
           </div>
           <div className="mos-setup-row">
-            <span><b>3</b><span><strong>Add what your résumé misses</strong><small>Links, contact details, goals, preferences, and availability improve form accuracy.</small></span></span>
-            <div className="mos-action-row"><button className="mos-button light" onClick={() => setShowContextImport(true)}>Import website / LinkedIn</button><button className="mos-button light" onClick={() => openFactForm("Contact details")}>Add contact</button></div>
+            <span><b>3</b><span><strong>Upload your FuturePhysicians contribution</strong><small>Use a focused PDF or direct facts about your personal FP role, actions, dates, and outcomes.</small></span></span>
+            <button className="mos-button light" onClick={openContributionImport}>Upload contribution</button>
           </div>
           {claims.length > 0 && (
             <div className="mos-onboarding-claims">
@@ -1175,10 +1180,10 @@ export default function Home() {
           <ErrorMessage message={error} />
           <button
             className="mos-button dark large full"
-            disabled={!profile.displayName.trim() || !onboardingLevel || verifiedClaims.length === 0 || busy === "onboarding"}
-            onClick={finishOnboarding}
+            disabled={!(memberBasics.fullName.trim() || profile.displayName.trim()) || busy === "member-basics"}
+            onClick={saveMemberBasics}
           >
-            {busy === "onboarding" ? "Saving…" : "Finish profile setup"}
+            {busy === "member-basics" ? "Saving…" : "Save member details and continue"}
           </button>
           {verifiedClaims.length === 0 && <small className="mos-helper">Verify at least one real fact to continue.</small>}
         </section>
@@ -1275,8 +1280,8 @@ export default function Home() {
         <header className="mos-topbar">
           <div><span className="mos-kicker">FuturePhysicians.org · internal workspace</span><h1>{pageTitle}</h1></div>
           <div className="mos-top-actions">
-            <button className="mos-button light" onClick={() => openFactForm()}>Add context</button>
-            <button className="mos-button dark" onClick={() => setShowImport(true)}>Upload document</button>
+            <button className="mos-button light" onClick={() => goTo("profile")}>Member details</button>
+            <button className="mos-button dark" onClick={openContributionImport}>Upload contribution</button>
           </div>
         </header>
 
@@ -1288,9 +1293,9 @@ export default function Home() {
               <div>
                 <span className="mos-pill inverse">Grants + awards copilot</span>
                 <h2>Clear grant and award applications without rewriting FuturePhysicians from scratch.</h2>
-                <p>Upload your personal résumé once. MeritOS combines your verified member facts with a separate FuturePhysicians knowledge base, prepares grounded answers beside the real form, and keeps unresolved details visible.</p>
+                <p>Add member basics and your personal FuturePhysicians contribution once. MeritOS combines them with a separate FuturePhysicians knowledge base, prepares grounded answers beside the real form, and keeps unresolved details visible.</p>
                 <div className="mos-action-row">
-                  <button className="mos-button pale" onClick={() => goTo(verifiedClaims.length ? "extension" : "profile")}>{verifiedClaims.length ? "Open grant autofill" : "Upload my résumé"}</button>
+                  <button className="mos-button pale" onClick={() => goTo(verifiedClaims.length ? "extension" : "profile")}>{verifiedClaims.length ? "Open grant autofill" : "Add member details"}</button>
                   <button className="mos-button text-inverse" onClick={() => goTo("review")}>Verify member facts →</button>
                 </div>
               </div>
@@ -1309,7 +1314,7 @@ export default function Home() {
                 <div className="mos-card-head"><div><span className="mos-kicker">Next best actions</span><h3>Make MeritOS more accurate</h3></div></div>
                 <div className="mos-action-list">
                   {reviewClaims.length > 0 && <button onClick={() => goTo("review")}><b>01</b><span><strong>Review {reviewClaims.length} extracted facts</strong><small>Unverified information cannot enter forms.</small></span><i>→</i></button>}
-                  {coveredAreas.length < coverageAreas.length && <button onClick={() => openFactForm(coverageAreas.find((area) => !coveredAreas.includes(area))?.name)}><b>02</b><span><strong>Fill a missing context area</strong><small>Your résumé does not explain everything that matters.</small></span><i>→</i></button>}
+                  {coveredAreas.length < coverageAreas.length && <button onClick={() => openFactForm(coverageAreas.find((area) => !coveredAreas.includes(area))?.name)}><b>02</b><span><strong>Fill a missing context area</strong><small>Add only the details about your FuturePhysicians contribution.</small></span><i>→</i></button>}
                   <button onClick={() => goTo("extension")}><b>03</b><span><strong>Run the factual autofill test</strong><small>Check identity, education, dates, choices, and unsupported questions on a safe form.</small></span><i>→</i></button>
                 </div>
               </article>
@@ -1328,8 +1333,8 @@ export default function Home() {
             <section className="mos-card" data-reveal>
               <div className="mos-card-head"><div><span className="mos-kicker">Two-source truth system</span><h3>The right source answers the right question.</h3></div></div>
               <div className="mos-review-grid">
-                <article><span className="mos-kicker">Member résumé</span><h3>You and your contribution</h3><p>Name, contact details, background, role, and your documented work for FuturePhysicians come only from your verified profile.</p></article>
-                <article><span className="mos-kicker">Organization knowledge</span><h3>FuturePhysicians itself</h3><p>Mission, programs, organizational accomplishments, and approved funding uses come from the shared FuturePhysicians source—not a member résumé.</p></article>
+                <article><span className="mos-kicker">Member details</span><h3>You and your contribution</h3><p>Name, contact details, education basics, role, and your documented work for FuturePhysicians come only from your verified member profile.</p></article>
+                <article><span className="mos-kicker">Organization knowledge</span><h3>FuturePhysicians itself</h3><p>Mission, programs, organizational accomplishments, and approved funding uses come from the shared FuturePhysicians source—not member details.</p></article>
                 <article><span className="mos-kicker">Application details</span><h3>Never silently guessed</h3><p>Location, amount, dates, audience, and measurable outcomes stay as visible placeholders until the reviewer completes them.</p></article>
               </div>
             </section>
@@ -1369,16 +1374,28 @@ export default function Home() {
         {view === "profile" && (
           <div className="mos-page">
             <section className="mos-page-intro" data-reveal>
-              <div><span className="mos-kicker">Your source of truth</span><h2>Build the fullest truthful picture of you.</h2><p>Documents provide evidence. Direct context captures goals, motivations, preferences, and details that never make it onto a résumé.</p></div>
-              <div className="mos-action-row"><button className="mos-button light" onClick={() => setShowContextImport(true)}>Import website / LinkedIn</button><button className="mos-button light" onClick={() => openFactForm()}>Add context</button><button className="mos-button dark" onClick={() => setShowImport(true)}>Upload document</button></div>
+              <div><span className="mos-kicker">Member profile</span><h2>Only the facts a grant or award needs from you.</h2><p>MeritOS needs basic education and contact details, plus your personal FuturePhysicians contribution. It does not need unrelated activities, coursework, or a full résumé.</p></div>
+              <div className="mos-action-row"><button className="mos-button light" onClick={() => openFactForm("Personal contribution")}>Add contribution fact</button><button className="mos-button dark" onClick={openContributionImport}>Upload FP contribution</button></div>
             </section>
             <section className="mos-source-plan" data-reveal>
-              <div><span className="mos-kicker">Smart source checklist</span><h3>Give MeritOS evidence once.</h3><p>Each source closes different gaps. Add the highest-value missing source; MeritOS re-checks coverage after every import.</p></div>
-              <div>{recommendedSources.map((source) => <article key={source.name} className={source.present ? "complete" : ""}><span>{source.present ? "✓" : "+"}</span><div><strong>{source.name}</strong><small>{source.present ? "Detected in your profile" : source.reason}</small></div>{!source.present && <button onClick={() => source.action === "context" ? setShowContextImport(true) : setShowImport(true)}>Add source</button>}</article>)}</div>
+              <div><span className="mos-kicker">Two inputs, no résumé</span><h3>Give MeritOS only what it can safely use.</h3><p>Basic details handle identity and education fields. Your contribution brief handles questions about what you personally did for FuturePhysicians.</p></div>
+              <div>{recommendedSources.map((source) => <article key={source.name} className={source.present ? "complete" : ""}><span>{source.present ? "✓" : "+"}</span><div><strong>{source.name}</strong><small>{source.present ? "Saved in your profile" : source.reason}</small></div>{!source.present && <button onClick={() => source.action === "contribution" ? openContributionImport() : document.getElementById("member-basics")?.scrollIntoView({ behavior: "smooth", block: "center" })}>{source.action === "contribution" ? "Upload brief" : "Add details"}</button>}</article>)}</div>
+            </section>
+            <section id="member-basics" className="mos-card" data-reveal>
+              <div className="mos-card-head"><div><span className="mos-kicker">Member basics</span><h3>Contact and education only.</h3><p>Add your name, school, grade, expected graduation date, email, and phone. Nothing else is required here.</p></div></div>
+              <div className="mos-field-grid">
+                <label>Full name<input value={memberBasics.fullName || profile.displayName} onChange={(event) => setMemberBasics({ ...memberBasics, fullName: event.target.value })} placeholder="Your full name" /></label>
+                <label>Email<input type="email" value={memberBasics.email} onChange={(event) => setMemberBasics({ ...memberBasics, email: event.target.value })} placeholder="you@example.org" /></label>
+                <label>Phone<input type="tel" value={memberBasics.phone} onChange={(event) => setMemberBasics({ ...memberBasics, phone: event.target.value })} placeholder="Optional" /></label>
+                <label>School<input value={memberBasics.school} onChange={(event) => setMemberBasics({ ...memberBasics, school: event.target.value })} placeholder="Your school" /></label>
+                <label>Current grade<select value={memberBasics.grade} onChange={(event) => setMemberBasics({ ...memberBasics, grade: event.target.value })}><option value="">Choose grade</option><option>9th grade</option><option>10th grade</option><option>11th grade</option><option>12th grade</option><option>College undergraduate</option><option>Graduate / professional school</option></select></label>
+                <label>Expected graduation<input type="date" value={memberBasics.graduation} onChange={(event) => setMemberBasics({ ...memberBasics, graduation: event.target.value })} /></label>
+              </div>
+              <button className="mos-button dark" disabled={busy === "member-basics"} onClick={saveMemberBasics}>{busy === "member-basics" ? "Saving…" : "Save member basics"}</button>
             </section>
             <section className="mos-card" data-reveal>
-              <div className="mos-card-head"><div><span className="mos-kicker">Member contribution brief</span><h3>Give MeritOS only the facts that belong to you.</h3><p>For FuturePhysicians grant and award applications, add a short PDF or direct facts covering your role, what you personally did, dates, and documented outcomes. Organization-wide impact is supplied separately and will not be attributed to you.</p></div></div>
-              <div className="mos-action-row"><button className="mos-button dark" onClick={() => setShowImport(true)}>Upload contribution PDF</button><button className="mos-button light" onClick={() => openFactForm("Leadership")}>Add my contribution</button></div>
+              <div className="mos-card-head"><div><span className="mos-kicker">FuturePhysicians contribution brief</span><h3>Give MeritOS only the facts that belong to you.</h3><p>Upload a short PDF, DOCX, or TXT that names FuturePhysicians and covers your role, personal actions, dates, and documented outcomes. MeritOS excludes unrelated schoolwork and activities; organization-wide facts already come from the shared FP source.</p></div></div>
+              <div className="mos-action-row"><button className="mos-button dark" onClick={openContributionImport}>Upload contribution brief</button><button className="mos-button light" onClick={() => openFactForm("Personal contribution")}>Add my contribution manually</button></div>
             </section>
             <section className="mos-coverage-grid" data-reveal>
               {coverageAreas.map((area) => {
@@ -1410,7 +1427,7 @@ export default function Home() {
                     </div>
                   </article>
                 ))}
-                {!filteredClaims.length && <div className="mos-empty"><strong>No matching facts.</strong><p>Upload a document or add context directly.</p></div>}
+                {!filteredClaims.length && <div className="mos-empty"><strong>No matching facts.</strong><p>Save your basics or upload a FuturePhysicians contribution brief.</p></div>}
               </div>
             </section>
           </div>
@@ -1723,16 +1740,16 @@ export default function Home() {
       <div className="mos-modal-backdrop" onMouseDown={closeImport}>
         <section className="mos-modal" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}>
           <button className="mos-modal-close" onClick={closeImport} aria-label="Close">×</button>
-          <span className="mos-kicker">Evidence import</span><h2 id="import-title">Add a document to your profile</h2>
-          <p>MeritOS groups related résumé bullets into candidate facts. Nothing becomes reusable until you verify it.</p>
+          <span className="mos-kicker">FuturePhysicians contribution import</span><h2 id="import-title">Add your contribution brief</h2>
+          <p>Upload only your personal FuturePhysicians role, actions, dates, and outcomes. MeritOS keeps unrelated schoolwork and activities out of this profile.</p>
           {(importStage === "idle" || importStage === "error") && (
             <label className="mos-drop-zone" onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
               <input type="file" accept=".pdf,.docx,.txt" onChange={(event) => chooseFile(event.target.files?.[0])} />
-              <img src="/meritos-mark-v2.png" alt="" /><strong>Choose a PDF, DOCX, or TXT</strong><small>or drop it here · 12 MB maximum</small>
+              <img src="/meritos-mark-v2.png" alt="" /><strong>Choose your FP contribution PDF, DOCX, or TXT</strong><small>Name FuturePhysicians and your personal contribution · 12 MB maximum</small>
             </label>
           )}
           {importStage === "selected" && selectedFile && <div className="mos-selected-file"><span>DOC</span><div><strong>{selectedFile.name}</strong><small>{Math.max(1, Math.round(selectedFile.size / 1024))} KB · ready</small></div><button className="mos-button dark" onClick={importDocument}>Extract facts</button></div>}
-          {importStage === "uploading" && <div className="mos-importing"><img src="/meritos-mark-v2.png" alt="" /><h3>Reading structure and grouping evidence…</h3><div><span /></div></div>}
+          {importStage === "uploading" && <div className="mos-importing"><img src="/meritos-mark-v2.png" alt="" /><h3>Finding your FuturePhysicians contribution facts…</h3><div><span /></div></div>}
           {importStage === "done" && <div className="mos-import-done"><strong>Import complete</strong><p>{importMessage}</p><button className="mos-button dark" onClick={() => { closeImport(); goTo("review"); }}>Review extracted facts</button></div>}
           {importStage === "error" && <ErrorMessage message={importMessage} />}
         </section>
