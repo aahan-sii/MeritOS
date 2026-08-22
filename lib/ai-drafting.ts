@@ -39,6 +39,7 @@ type DraftBatchRequest = {
   evidence: DraftEvidence[];
   organizationEvidence?: DraftEvidence[];
   organizationName?: string;
+  organizationApplication?: boolean;
   proactive?: boolean;
   highInitiative?: boolean;
 };
@@ -70,10 +71,15 @@ export async function createGroundedDraft(request: DraftRequest): Promise<DraftR
 export async function createGroundedDraftBatch(request: DraftBatchRequest): Promise<DraftResult[]> {
   type PreparedField = { field: DraftField; immediate?: DraftResult; evidence?: DraftEvidence[] };
   const prepared: PreparedField[] = request.fields.map((field): PreparedField => {
-    if (needsPersonalInput(field) && !request.proactive) return { field, immediate: needsInput("Why does this specific opportunity matter to you? Add your own reason in MeritOS before drafting this answer.") };
+    const fieldText = `${field.label} ${field.description || ""} ${field.name || ""}`.toLowerCase();
+    const directPersonalField = /\b(full|legal) name\b|\byour (?:e-?mail|email|phone|telephone)\b|\bapplicant (?:name|email|phone)\b/.test(fieldText);
+    const organizationScoped = Boolean(request.organizationApplication) && !isMemberContributionQuestion(field) && !directPersonalField;
+    if (needsPersonalInput(field) && !request.proactive && !organizationScoped) return { field, immediate: needsInput("Why does this specific opportunity matter to you? Add your own reason in MeritOS before drafting this answer.") };
     if (!canDraftField(field, { proactive: request.proactive })) return { field, immediate: needsInput("This field needs application-specific or sensitive information that MeritOS will not guess.") };
-    const routedEvidence = routeFuturePhysiciansEvidence(field, request.evidence, request.organizationEvidence || []);
-    let evidence = isFuturePhysiciansOrganizationQuestion(field)
+    const routedEvidence = organizationScoped
+      ? [...(request.organizationEvidence || []), ...request.evidence.filter((item) => /futurephysicians/i.test(item.statement))]
+      : routeFuturePhysiciansEvidence(field, request.evidence, request.organizationEvidence || []);
+    let evidence = (organizationScoped || isFuturePhysiciansOrganizationQuestion(field))
       ? dedupeEvidence([
         ...selectFuturePhysiciansOrganizationEvidence(field, request.organizationEvidence || []),
         ...routedEvidence.filter((item) => !item.id.startsWith("fp_org_")),
@@ -147,7 +153,7 @@ export async function createGroundedDraftBatch(request: DraftBatchRequest): Prom
             maxCharacters: normalizedMaxLength(field),
             options: Array.isArray(field.options) ? field.options.slice(0, 40).map((option) => cleanDraftingText(typeof option === "string" ? option : option.label || option.value, 180)) : [],
             allowedEvidenceIds: evidence.map((item) => item.id),
-            answerScope: isMemberContributionQuestion(field) ? "individual_member" : isFuturePhysiciansOrganizationQuestion(field) ? "futurephysicians_organization" : "individual_member",
+            answerScope: isMemberContributionQuestion(field) ? "individual_member" : request.organizationApplication || isFuturePhysiciansOrganizationQuestion(field) ? "futurephysicians_organization" : "individual_member",
           })),
         }),
       },

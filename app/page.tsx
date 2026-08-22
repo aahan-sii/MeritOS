@@ -1376,6 +1376,10 @@ export default function Home() {
               <div><span className="mos-kicker">Smart source checklist</span><h3>Give MeritOS evidence once.</h3><p>Each source closes different gaps. Add the highest-value missing source; MeritOS re-checks coverage after every import.</p></div>
               <div>{recommendedSources.map((source) => <article key={source.name} className={source.present ? "complete" : ""}><span>{source.present ? "✓" : "+"}</span><div><strong>{source.name}</strong><small>{source.present ? "Detected in your profile" : source.reason}</small></div>{!source.present && <button onClick={() => source.action === "context" ? setShowContextImport(true) : setShowImport(true)}>Add source</button>}</article>)}</div>
             </section>
+            <section className="mos-card" data-reveal>
+              <div className="mos-card-head"><div><span className="mos-kicker">Member contribution brief</span><h3>Give MeritOS only the facts that belong to you.</h3><p>For FuturePhysicians grant and award applications, add a short PDF or direct facts covering your role, what you personally did, dates, and documented outcomes. Organization-wide impact is supplied separately and will not be attributed to you.</p></div></div>
+              <div className="mos-action-row"><button className="mos-button dark" onClick={() => setShowImport(true)}>Upload contribution PDF</button><button className="mos-button light" onClick={() => openFactForm("Leadership")}>Add my contribution</button></div>
+            </section>
             <section className="mos-coverage-grid" data-reveal>
               {coverageAreas.map((area) => {
                 const count = verifiedClaims.filter((claim) => area.pattern.test(`${claim.category} ${claim.statement}`)).length;

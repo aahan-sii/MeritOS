@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
     const page = body?.page && typeof body.page === "object" ? body.page as Record<string, unknown> : {};
     const highInitiative = body?.mode === "high_initiative";
     const proactive = body?.mode === "proactive" || highInitiative;
+    const organizationApplication = body?.organizationApplication === true;
     const [claimRows, opportunityRows, [accountProfile]] = await Promise.all([connection.db
       .select({ id: claims.id, category: claims.category, statement: claims.statement })
       .from(claims)
@@ -87,6 +88,7 @@ export async function POST(request: NextRequest) {
       evidence: rows,
       organizationEvidence: futurePhysiciansEvidence,
       organizationName: futurePhysiciansKnowledge.organizationName,
+      organizationApplication,
       proactive,
       highInitiative,
     });

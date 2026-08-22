@@ -3,7 +3,8 @@ const state = {
   coverage: [],
   identity: { displayName: "", email: "", headline: "" },
   activeOpportunity: null,
-  proactive: false,
+  proactive: true,
+  organizationApplication: true,
   initiativeMode: "careful",
   autoAnalysisKey: "",
   fields: [],
@@ -538,7 +539,7 @@ async function generateDrafts(fields, button, { automatic = false } = {}) {
     const response = await fetch(`${state.baseUrl}/api/extension/draft`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${state.token}` },
-      body: JSON.stringify({ fields, mode: state.proactive ? state.initiativeMode : "standard", page: { title: tab?.title || "", url: tab?.url || "" } }),
+      body: JSON.stringify({ fields, mode: state.proactive ? state.initiativeMode : "standard", organizationApplication: state.organizationApplication, page: { title: tab?.title || "", url: tab?.url || "" } }),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Could not analyze this form.");
@@ -641,6 +642,14 @@ $("proactiveMode").addEventListener("change", async (event) => {
   await chrome.storage.local.set({ meritosProactive: state.proactive, meritosInitiativeMode: state.initiativeMode });
   await scan();
 });
+$("organizationMode").addEventListener("change", async (event) => {
+  state.organizationApplication = event.target.checked;
+  state.autoAnalysisKey = "";
+  state.aiSuggestions.clear();
+  state.manualSuggestions.clear();
+  await chrome.storage.local.set({ meritosOrganizationApplication: state.organizationApplication });
+  await scan();
+});
 $("fillApproved").addEventListener("click", async () => {
   $("fillApproved").disabled = true;
   $("fillApproved").textContent = "Filling…";
@@ -676,6 +685,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     hydrateProfile(changes.meritosProfile.newValue);
     if (state.token || tokenAvailable) showAssistant();
   }
+  if (changes.meritosOrganizationApplication) {
+    state.organizationApplication = changes.meritosOrganizationApplication.newValue !== false;
+    $("organizationMode").checked = state.organizationApplication;
+    state.autoAnalysisKey = "";
+  }
   if (tokenAvailable) {
     state.token = nextToken;
     $("token").value = nextToken;
@@ -706,14 +720,16 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
 });
 
 (async () => {
-  const stored = await chrome.storage.local.get(["meritosBaseUrl", "meritosToken", "meritosProfile", "meritosProactive", "meritosInitiativeMode", "meritosApplicationRun", "meritosApplicationRunReport", "meritosApplicationQueue"]);
-  state.proactive = stored.meritosProactive === true;
+  const stored = await chrome.storage.local.get(["meritosBaseUrl", "meritosToken", "meritosProfile", "meritosProactive", "meritosOrganizationApplication", "meritosInitiativeMode", "meritosApplicationRun", "meritosApplicationRunReport", "meritosApplicationQueue"]);
+  state.proactive = stored.meritosProactive !== false;
+  state.organizationApplication = stored.meritosOrganizationApplication !== false;
   state.initiativeMode = ["careful", "proactive", "high_initiative"].includes(stored.meritosInitiativeMode) ? stored.meritosInitiativeMode : (state.proactive ? "proactive" : "careful");
   // Opportunity search/autopilot is intentionally disabled in the accuracy-validation release.
   state.applicationRun = null;
   await chrome.storage.local.remove(["meritosApplicationRun", "meritosApplicationQueue"]);
   state.lastRunReport = stored.meritosApplicationRunReport || null;
   $("proactiveMode").checked = state.proactive;
+  $("organizationMode").checked = state.organizationApplication;
   $("autoContinueRun").checked = state.applicationRun?.autoContinue !== false;
   renderApplicationRun();
   if (stored.meritosBaseUrl) $("baseUrl").value = stored.meritosBaseUrl;

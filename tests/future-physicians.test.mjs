@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { futurePhysiciansEvidence, futurePhysiciansTemplates, routeFuturePhysiciansEvidence, selectFuturePhysiciansOrganizationEvidence } from "../lib/future-physicians.ts";
 
 const memberEvidence = [
@@ -53,4 +54,13 @@ test("grant plans keep the $500k workforce support distinct from proposed events
   assert.match(plan?.statement || "", /future/i);
   assert.match(recognition?.template || "", /documented recognition/i);
   assert.match(recognition?.template || "", /not a request for grant funding/i);
+});
+
+test("extension defaults to the FuturePhysicians organization scope while keeping member contributions separate", () => {
+  const sidepanel = readFileSync(new URL("../extension/sidepanel.html", import.meta.url), "utf8");
+  const script = readFileSync(new URL("../extension/sidepanel.js", import.meta.url), "utf8");
+  assert.match(sidepanel, /id="organizationMode"[^>]*checked/);
+  assert.match(sidepanel, /FuturePhysicians grant or award application/);
+  assert.match(script, /organizationApplication: true/);
+  assert.match(script, /organizationApplication: state\.organizationApplication/);
 });
