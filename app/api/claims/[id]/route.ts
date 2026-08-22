@@ -15,6 +15,7 @@ const updatableFields = new Set([
   "confidence",
 ]);
 const statuses = new Set(["verified", "draft", "inference", "restricted", "missing"]);
+const MAX_MANUAL_CONTRIBUTION_LENGTH = 20_000;
 
 export async function PATCH(
   request: NextRequest,
@@ -29,7 +30,7 @@ export async function PATCH(
     for (const [key, value] of Object.entries(body)) {
       if (!updatableFields.has(key)) throw new ApiError(400, `${key} cannot be updated.`);
       if (key === "category") changes.category = asString(value, "category", 100);
-      if (key === "statement") changes.statement = asString(value, "statement", 4000);
+      if (key === "statement") changes.statement = asString(value, "statement", MAX_MANUAL_CONTRIBUTION_LENGTH);
       if (key === "status") {
         if (typeof value !== "string" || !statuses.has(value)) throw new ApiError(400, "status is invalid.");
         changes.status = value;

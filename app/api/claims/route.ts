@@ -19,6 +19,7 @@ const claimStatuses = new Set([
   "restricted",
   "missing",
 ]);
+const MAX_MANUAL_CONTRIBUTION_LENGTH = 20_000;
 
 export async function GET() {
   try {
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
       id: id("claim"),
       userEmail: user.email,
       category: asString(body.category, "category", 100),
-      statement: asString(body.statement, "statement", 4000),
+      statement: asString(body.statement, "statement", MAX_MANUAL_CONTRIBUTION_LENGTH),
       status: status as "verified" | "draft" | "inference" | "restricted" | "missing",
       evidence: JSON.stringify(Array.isArray(body.evidence) ? body.evidence : []),
       sensitivity: body.sensitivity === "sensitive" ? "sensitive" as const : "standard" as const,

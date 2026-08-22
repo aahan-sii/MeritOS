@@ -1725,8 +1725,8 @@ export default function Home() {
             <span className="mos-kicker">Applicant-confirmed context</span><h2 id="fact-title">Add something MeritOS should know</h2>
             {factPrompt && <blockquote>{factPrompt}</blockquote>}
             <label>Context area<select value={factCategory} onChange={(event) => setFactCategory(event.target.value)}>{[...coverageAreas.map((area) => area.name), "Research", "Professional experience", "Reference context", "Story context", "Other"].map((category) => <option key={category}>{category}</option>)}</select></label>
-            <label>Your truthful answer<textarea autoFocus value={factStatement} onChange={(event) => setFactStatement(event.target.value)} placeholder="Write this in your own words. Include exact dates, outcomes, or motivation when relevant." /></label>
-            <p className="mos-fine-print">You are marking this as applicant-confirmed. MeritOS may use it for matching questions, drafting, and interview practice.</p>
+            <label>Your truthful answer<textarea autoFocus value={factStatement} maxLength={20_000} onChange={(event) => setFactStatement(event.target.value)} placeholder="For a contribution brief, paste your FuturePhysicians role, personal actions, dates, and outcomes. Longer notes are okay." /></label>
+            <p className="mos-fine-print">{factStatement.length.toLocaleString()} / 20,000 characters. This is applicant-confirmed context; MeritOS may use it for matching questions and grounded grant drafting.</p>
             <button className="mos-button dark large full" disabled={!factStatement.trim() || busy === "fact"} onClick={saveFact}>{busy === "fact" ? "Saving…" : "Save as verified context"}</button>
           </section>
         </div>
